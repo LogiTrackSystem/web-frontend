@@ -32,10 +32,15 @@ def main():
     if len(sys.argv) > 2:
         host = sys.argv[2]
 
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
     handler = functools.partial(Handler, directory=".")
     with socketserver.TCPServer((host, port), handler) as httpd:
-        print(f"→ Frontend LogiTrack disponible en http://{host}:{port}")
-        print("  (Ctrl+C para detener)")
+        print(f"-> Frontend LogiTrack disponible en http://{host}:{port}")
+        print("   (Ctrl+C para detener)")
         httpd.serve_forever()
 
 
