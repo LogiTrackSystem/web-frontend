@@ -1,50 +1,14 @@
 /**
  * LogiTrack — Panel de gestión
  * SPA en vanilla JS (sin build) que consume el API Gateway (FastAPI).
+ *
+ * Vistas: Dashboard, Vehículos, Conductores, Telemetría, Mantenimiento,
+ * Envíos, Rutas, Aduana, Facturación, Notificaciones, Analítica.
  */
 "use strict";
 
 /* ==================================================================
-   1. Utilidades
-   ================================================================== */
-
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-
-const shortId = (id) => (id ? String(id).slice(0, 8) : "—");
-const fmtNum = (n) => (n === null || n === undefined || n === "" ? "—" : Number(n).toLocaleString("es-AR"));
-const fmtFecha = (iso) =>
-  iso ? new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-const fmtFechaHora = (iso) =>
-  iso
-    ? new Date(iso).toLocaleString("es-AR", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
-
-function escapeHtml(str) {
-  return String(str ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  }[c]));
-}
-
-async function conTiempo(promise, ms = 400) {
-  // Usado para dejar ver el spinner al menos un instante en cargas rápidas
-  const delay = new Promise((r) => setTimeout(r, ms));
-  const [result] = await Promise.all([promise, delay]);
-  return result;
-}
-
-/* ==================================================================
-   2. Constantes de dominio
+   1. Constantes de dominio
    ================================================================== */
 
 const ENVIO_ESTADOS = {
@@ -66,14 +30,39 @@ const CONDUCTOR_ESTADOS = {
   in_route: { label: "En ruta", cls: "info" },
   off: { label: "Fuera de servicio", cls: "neutral" },
 };
-
-const estadoBadge = (map, estado) => {
-  const info = map[estado] || { label: estado || "—", cls: "neutral" };
-  return `<span class="badge ${info.cls}"><span class="dot"></span>${escapeHtml(info.label)}</span>`;
+const DECLARACION_ESTADOS = {
+  pendiente: { label: "Pendiente", cls: "neutral" },
+  aprobada: { label: "Aprobada", cls: "success" },
+  retenida: { label: "Retenida", cls: "warn" },
+  rechazada: { label: "Rechazada", cls: "danger" },
+};
+const FACTURA_ESTADOS = {
+  emitida: { label: "Emitida", cls: "info" },
+  pagada: { label: "Pagada", cls: "success" },
+  vencida: { label: "Vencida", cls: "danger" },
+};
+const RUTA_URGENCIA = {
+  alta: { label: "Alta", cls: "danger" },
+  media: { label: "Media", cls: "warn" },
+  baja: { label: "Baja", cls: "neutral" },
 };
 
+function etiquetaEvento(tipo) {
+  const mapa = {
+    creado: "🆕 Envío creado",
+    asignado: "🚚 Vehículo asignado",
+    en_transito: "🚛 En tránsito",
+    con_incidencia: "⚠️ Incidencia registrada",
+    devuelto: "↩️ Envío devuelto",
+    entregado: "✅ Entregado",
+    retenido_aduana: "⛭ Retenido en aduana",
+    liberado_aduana: "✅ Liberado por aduana",
+  };
+  return mapa[tipo] || tipo;
+}
+
 /* ==================================================================
-   3. Estado global
+   2. Estado global
    ================================================================== */
 
 const state = {
@@ -88,65 +77,25 @@ const state = {
 };
 
 /* ==================================================================
-   4. Helpers de UI
-   ================================================================== */
-
-function toast(msg, type = "info") {
-  const container = $("#toasts");
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.innerHTML = `<span class="t-msg">${escapeHtml(msg)}</span><button class="t-close" type="button" aria-label="Cerrar">×</button>`;
-  container.appendChild(el);
-  el.querySelector(".t-close").addEventListener("click", () => el.remove());
-  setTimeout(() => el.remove(), 5000);
-}
-
-function openModal({ title, body, footer }) {
-  $("#modal-root").innerHTML = `
-    <div class="modal-overlay" id="modal-overlay">
-      <div class="modal">
-        <div class="modal-header">
-          <h3>${escapeHtml(title)}</h3>
-          <button class="modal-close" type="button" data-action="close-modal" aria-label="Cerrar">×</button>
-        </div>
-        <div class="modal-body">${body}</div>
-        ${footer ? `<div class="modal-footer">${footer}</div>` : ""}
-      </div>
-    </div>`;
-  $("#modal-overlay").addEventListener("click", (e) => {
-    if (e.target.id === "modal-overlay") closeModal();
-  });
-  const firstField = $("#modal-root input, #modal-root select, #modal-root textarea");
-  if (firstField) setTimeout(() => firstField.focus(), 60);
-}
-
-function closeModal() {
-  $("#modal-root").innerHTML = "";
-}
-
-function spinnerHtml() {
-  return `<div class="spinner" role="status" aria-label="Cargando"></div>`;
-}
-
-function emptyState(emoji, text) {
-  return `<div class="state-box"><span class="emoji">${emoji}</span>${escapeHtml(text)}</div>`;
-}
-
-/* ==================================================================
-   5. Navegación
+   3. Navegación
    ================================================================== */
 
 const VIEWS = {
   dashboard: { title: "Dashboard", subtitle: "Resumen del sistema LogiTrack", render: renderDashboard, action: null },
   vehiculos: { title: "Vehículos", subtitle: "Flota de LogiTrack", render: renderVehiculos, action: { label: "＋ Nuevo vehículo", fn: modalNuevoVehiculo } },
   conductores: { title: "Conductores", subtitle: "Equipo de conducción", render: renderConductores, action: { label: "＋ Nuevo conductor", fn: modalNuevoConductor } },
+  telemetria: { title: "Telemetría", subtitle: "Lecturas en vivo por vehículo", render: renderTelemetria, action: { label: "＋ Registrar lectura", fn: modalNuevaLectura } },
+  mantenimiento: { title: "Mantenimiento", subtitle: "Programas e intervenciones", render: renderMantenimiento, action: { label: "＋ Agregar", fn: modalAgregarMantenimiento } },
   envios: { title: "Envíos", subtitle: "Ciclo de vida de los envíos", render: renderEnvios, action: { label: "＋ Nuevo envío", fn: modalNuevoEnvio } },
+  rutas: { title: "Rutas", subtitle: "Planificación y recálculo de rutas", render: renderRutas, action: { label: "＋ Nueva ruta", fn: modalNuevaRuta } },
+  aduana: { title: "Aduana", subtitle: "Declaraciones aduaneras", render: renderAduana, action: null },
+  facturacion: { title: "Facturación", subtitle: "Facturas, tarifas y costos", render: renderFacturacion, action: null },
+  notificaciones: { title: "Notificaciones", subtitle: "Mensajes y preferencias", render: renderNotificaciones, action: { label: "⚙ Preferencias", fn: modalPreferencias } },
+  analitica: { title: "Analítica", subtitle: "KPIs, ETL y proyecciones", render: renderAnalitica, action: { label: "▶ Ejecutar ETL", fn: runEtlManual } },
 };
 
 async function navigate(view, opts = {}) {
-  if (opts.envioId !== undefined) {
-    state.envioSeleccionadoId = opts.envioId;
-  }
+  if (opts.envioId !== undefined) state.envioSeleccionadoId = opts.envioId;
   if (opts.limpiarFiltros) {
     state.filtros = { estado: "", cliente_id: "" };
     state.envioSeleccionadoId = null;
@@ -179,7 +128,7 @@ async function navigate(view, opts = {}) {
 }
 
 /* ==================================================================
-   6. Chequeo de salud de la API
+   4. Salud de la API
    ================================================================== */
 
 async function checkHealth() {
@@ -213,72 +162,76 @@ function modalConfigApi() {
 }
 
 /* ==================================================================
-   7. Dashboard
+   5. Dashboard
    ================================================================== */
 
 async function renderDashboard() {
   const [vehicles, drivers, shipments] = await conTiempo(
-    Promise.all([listVehiculos(), listConductores(), listarEnvios()]).catch((err) => {
-      throw err;
-    })
+    Promise.all([listVehiculos(), listConductores(), listarEnvios()])
   );
-  state.vehicles = vehicles;
-  state.drivers = drivers;
-  state.shipments = shipments;
+  state.vehicles = vehicles || [];
+  state.drivers = drivers || [];
+  state.shipments = shipments || [];
 
-  const cuenta = (estado) => shipments.filter((s) => s.estado === estado).length;
-  const total = shipments.length;
+  const cuenta = (estado) => state.shipments.filter((s) => s.estado === estado).length;
+  const total = state.shipments.length;
 
   const kpis = [
-    { icon: "📦", cls: "purple", value: total, label: "Envíos totales" },
+    { icon: "📦", cls: "indigo", value: total, label: "Envíos registrados" },
     { icon: "⏳", cls: "amber", value: cuenta("pendiente"), label: "Pendientes" },
     { icon: "🚚", cls: "blue", value: cuenta("en_transito"), label: "En tránsito" },
+    { icon: "⚠️", cls: "red", value: cuenta("con_incidencia"), label: "Con incidencia" },
     { icon: "✅", cls: "green", value: cuenta("entregado"), label: "Entregados" },
-    { icon: "🚛", cls: "blue", value: vehicles.length, label: "Vehículos" },
-    { icon: "🧑‍✈️", cls: "green", value: drivers.length, label: "Conductores" },
+    { icon: "🛻", cls: "slate", value: state.vehicles.length, label: "Vehículos" },
   ];
 
   const kpiHtml = kpis
     .map(
-      (k) => `
-      <div class="kpi">
-        <div class="kpi-icon ${k.cls}">${k.icon}</div>
-        <div>
-          <div class="kpi-value">${fmtNum(k.value)}</div>
-          <div class="kpi-label">${k.label}</div>
-        </div>
-      </div>`
+      (k, i) => `<div class="kpi stagger" style="--i:${i}">
+          <div class="kpi-icon ${k.cls}">${k.icon}</div>
+          <div>
+            <div class="kpi-value">${fmtNum(k.value)}</div>
+            <div class="kpi-label">${k.label}</div>
+          </div>
+        </div>`
     )
     .join("");
 
-  // Distribución por estado
   const orden = ["pendiente", "en_transito", "con_incidencia", "devuelto", "entregado"];
+  const colores = { neutral: "#94a3b8", info: "#0284c7", warn: "#d97706", danger: "#dc2626", success: "#16a34a" };
   const barras = orden
     .filter((e) => ENVIO_ESTADOS[e])
     .map((e) => {
       const n = cuenta(e);
       const pct = total ? Math.round((n / total) * 100) : 0;
       const info = ENVIO_ESTADOS[e];
-      const colores = {
-        neutral: "#94a3b8",
-        info: "#0284c7",
-        warn: "#d97706",
-        danger: "#dc2626",
-        success: "#16a34a",
-      };
       return `
         <div class="estado-bar">
-          <div class="row">
-            <span class="lbl">${info.label}</span>
-            <span><strong>${n}</strong> · ${pct}%</span>
-          </div>
-          <div class="track"><div class="fill" style="width:${pct}%;background:${colores[info.cls]}"></div></div>
+          <div class="row"><span class="lbl">${info.label}</span><span><strong>${n}</strong> · ${pct}%</span></div>
+          <div class="track"><div class="fill" style="background:${colores[info.cls]}"></div></div>
         </div>`;
     })
     .join("");
 
-  // Últimos envíos
-  const recientes = shipments.slice(0, 5);
+  // Actividad reciente (analytics, tolerante a caídas)
+  let actividadHtml = emptyState("📭", "Sin actividad registrada todavía.");
+  try {
+    const actividad = await analyticsActividadReciente(8);
+    if (actividad && actividad.length) {
+      actividadHtml = `<div class="timeline">${actividad
+        .map(
+          (a) => `<div class="tl-item">
+            <div class="tl-title">${escapeHtml(a.mensaje)}</div>
+            <div class="tl-date">${fmtFechaHora(a.ocurrido_en)}</div>
+          </div>`
+        )
+        .join("")}</div>`;
+    }
+  } catch (_err) {
+    actividadHtml = emptyState("◧", "Analytics no disponible. Ejecutá el ETL desde la vista Analítica.");
+  }
+
+  const recientes = state.shipments.slice(0, 5);
   const tablaHtml = recientes.length
     ? `<div class="table-wrap"><table>
         <thead><tr><th>Fecha</th><th>ID</th><th>Origen</th><th>Destino</th><th>Estado</th><th>Peso</th></tr></thead>
@@ -302,63 +255,64 @@ async function renderDashboard() {
   $("#view").innerHTML = `
     <div class="kpis">${kpiHtml}</div>
     <div class="grid-2">
-      <div class="card">
-        <div class="card-header">
-          <div><h2>Envíos por estado</h2><div class="sub">Distribución actual de la flota de envíos</div></div>
-        </div>
+      <div class="card stagger" style="--i:6">
+        <div class="card-header"><div><h2>Envíos por estado</h2><div class="sub">Distribución actual de la flota de envíos</div></div></div>
         <div class="card-body">${total ? `<div class="estado-bars">${barras}</div>` : emptyState("📊", "Sin datos aún.")}</div>
       </div>
-      <div class="card">
+      <div class="card stagger" style="--i:7">
         <div class="card-header">
           <div><h2>Últimos envíos</h2><div class="sub">Clic para ver el detalle</div></div>
-          <button type="button" class="btn btn-ghost" data-action="go-envios">Ver todos</button>
+          <button type="button" class="btn btn-ghost small" data-action="go-envios">Ver todos</button>
         </div>
         <div class="card-body" style="padding:0">${tablaHtml}</div>
       </div>
+    </div>
+    <div class="card stagger" style="--i:8">
+      <div class="card-header"><div><h2>Actividad reciente</h2><div class="sub">Últimos eventos consolidados por Analytics</div></div></div>
+      <div class="card-body">${actividadHtml}</div>
     </div>`;
 }
 
 /* ==================================================================
-   8. Vehículos
+   6. Vehículos
    ================================================================== */
 
 async function renderVehiculos() {
   const vehicles = await conTiempo(listVehiculos());
-  state.vehicles = vehicles;
+  state.vehicles = vehicles || [];
 
-  if (!vehicles.length) {
-    $("#view").innerHTML = `<div class="card"><div class="card-body">${emptyState("🚛", "No hay vehículos registrados. Cargá el primero con el botón «Nuevo vehículo».")}</div></div>`;
+  if (!state.vehicles.length) {
+    $("#view").innerHTML = `<div class="card"><div class="card-body">${emptyState("🛻", "No hay vehículos registrados. Cargá el primero con el botón «Nuevo vehículo».")}</div></div>`;
     return;
   }
 
-  const rows = vehicles
-    .map((v) => `
-      <tr>
-        <td><strong>${escapeHtml(v.placa)}</strong></td>
+  const rows = state.vehicles
+    .map((v, i) => `
+      <tr class="stagger" style="--i:${i}">
+        <td><strong>${escapeHtml(v.placa)}</strong><span class="cell-sub">${escapeHtml(v.id)}</span></td>
         <td>${escapeHtml(v.tipo)}</td>
         <td class="number">${fmtNum(v.capacidad_kg)} kg</td>
-        <td class="number">${fmtNum(v.capacidad_m3)} m³</td>
+        <td class="number">${v.capacidad_m3 != null ? fmtNum(v.capacidad_m3) + " m³" : "—"}</td>
         <td>${v.anio ? escapeHtml(v.anio) : "—"}</td>
         <td>${fmtFecha(v.vencimiento_seguro)}</td>
         <td>${estadoBadge(VEHICULO_ESTADOS, v.estado)}</td>
         <td>${v.capacidad_refrigeracion ? "❄️ Sí" : "No"}</td>
         <td>${v.certificado_hazmat ? "⚠️ Sí" : "No"}</td>
+        <td><button class="btn btn-ghost small" data-action="change-vehiculo-estado" data-id="${escapeHtml(v.id)}" data-estado="${escapeHtml(v.estado)}">Estado</button></td>
       </tr>`)
     .join("");
 
   $("#view").innerHTML = `
     <div class="card">
       <div class="card-header">
-        <div><h2>Flota (${vehicles.length})</h2><div class="sub">${vehicles.filter((v) => v.estado === "active").length} activos</div></div>
-        <button type="button" class="btn btn-ghost" data-action="reload-view">↻ Recargar</button>
+        <div><h2>Flota (${state.vehicles.length})</h2><div class="sub">${state.vehicles.filter((v) => v.estado === "active").length} activos</div></div>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
       </div>
-      <div class="table-wrap"><table>
-        <thead><tr>
-          <th>Placa</th><th>Tipo</th><th>Capacidad</th><th>Volumen</th><th>Año</th>
-          <th>Seguro vence</th><th>Estado</th><th>Refrig.</th><th>Hazmat</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>
+      ${tablaSimple(
+        ["Placa", "Tipo", "Capacidad", "Volumen", "Año", "Seguro vence", "Estado", "Refrig.", "Hazmat", ""],
+        rows,
+        { emptyEmoji: "🛻" }
+      )}
     </div>`;
 }
 
@@ -423,24 +377,56 @@ async function submitNuevoVehiculo(form) {
   }
 }
 
+function modalCambioEstadoVehiculo(id, estadoActual) {
+  openModal({
+    title: "Cambiar estado del vehículo",
+    body: `
+      <form id="estado-vehiculo" data-form="estado-vehiculo" data-id="${escapeHtml(id)}">
+        <div class="form-grid">
+          <div class="field full"><label for="ve-estado">Nuevo estado <span class="req">*</span></label>
+            <select id="ve-estado" name="estado" required>
+              <option value="active" ${estadoActual === "active" ? "selected" : ""}>Activo</option>
+              <option value="inactive" ${estadoActual === "inactive" ? "selected" : ""}>Inactivo</option>
+              <option value="mantenimiento" ${estadoActual === "mantenimiento" ? "selected" : ""}>Mantenimiento</option>
+            </select></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="estado-vehiculo">Actualizar</button>`,
+  });
+}
+
+async function submitEstadoVehiculo(form, id) {
+  const fd = new FormData(form);
+  try {
+    await cambiarEstadoVehiculo(id, { estado: fd.get("estado") });
+    closeModal();
+    toast("Estado del vehículo actualizado", "success");
+    renderVehiculos().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
 /* ==================================================================
-   9. Conductores
+   7. Conductores
    ================================================================== */
 
 async function renderConductores() {
   const drivers = await conTiempo(listConductores());
-  state.drivers = drivers;
+  state.drivers = drivers || [];
 
-  if (!drivers.length) {
+  if (!state.drivers.length) {
     $("#view").innerHTML = `<div class="card"><div class="card-body">${emptyState("🧑‍✈️", "No hay conductores registrados. Cargá el primero con el botón «Nuevo conductor».")}</div></div>`;
     return;
   }
 
   const vehiculoPorId = new Map(state.vehicles.map((v) => [v.id, v]));
 
-  const rows = drivers
-    .map((c) => `
-      <tr>
+  const rows = state.drivers
+    .map((c, i) => `
+      <tr class="stagger" style="--i:${i}">
         <td><strong>${escapeHtml(c.nombre)}</strong></td>
         <td class="number">${escapeHtml(c.licencia_numero)}</td>
         <td>${escapeHtml(c.categorias_licencia || "—")}</td>
@@ -454,15 +440,10 @@ async function renderConductores() {
   $("#view").innerHTML = `
     <div class="card">
       <div class="card-header">
-        <div><h2>Conductores (${drivers.length})</h2><div class="sub">${drivers.filter((c) => c.estado === "available").length} disponibles</div></div>
-        <button type="button" class="btn btn-ghost" data-action="reload-view">↻ Recargar</button>
+        <div><h2>Conductores (${state.drivers.length})</h2><div class="sub">${state.drivers.filter((c) => c.estado === "available").length} disponibles</div></div>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
       </div>
-      <div class="table-wrap"><table>
-        <thead><tr>
-          <th>Nombre</th><th>Licencia</th><th>Categorías</th><th>Hazmat</th><th>Vehículo</th><th>Horas/sem</th><th>Estado</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>
+      ${tablaSimple(["Nombre", "Licencia", "Categorías", "Hazmat", "Vehículo", "Horas/sem", "Estado"], rows, { emptyEmoji: "🧑‍✈️" })}
     </div>`;
 }
 
@@ -528,18 +509,21 @@ async function submitNuevoConductor(form) {
 }
 
 /* ==================================================================
-   10. Envíos
+   8. Envíos
    ================================================================== */
 
 async function loadEnvios() {
   const params = {};
   if (state.filtros.estado) params.estado = state.filtros.estado;
   if (state.filtros.cliente_id) params.cliente_id = state.filtros.cliente_id;
-  state.shipments = await listarEnvios(params);
+  state.shipments = (await listarEnvios(params)) || [];
 }
 
 async function renderEnvios() {
   await conTiempo(loadEnvios());
+  if (!state.vehicles.length) {
+    try { state.vehicles = (await listVehiculos()) || []; } catch (_err) { state.vehicles = []; }
+  }
 
   const filtrosHtml = `
     <form class="filters" data-form="filtros-envios">
@@ -556,29 +540,24 @@ async function renderEnvios() {
       <button type="button" class="btn btn-ghost" data-action="clear-filtros">Limpiar</button>
     </form>`;
 
-  const tablaHtml = state.shipments.length
-    ? `<div class="table-wrap"><table>
-        <thead><tr>
-          <th>Fecha</th><th>ID</th><th>Cliente</th><th>Origen → Destino</th>
-          <th>Estado</th><th>Peso</th><th>Vol.</th><th>Vehículo</th><th>SLA</th>
-        </tr></thead>
-        <tbody>
-          ${state.shipments
-            .map((s) => `
-          <tr class="clickable" data-action="open-envio" data-id="${escapeHtml(s.id)}">
-            <td>${fmtFecha(s.creado_en)}</td>
-            <td class="number">${shortId(s.id)}</td>
-            <td class="number">${shortId(s.cliente_id)}</td>
-            <td>${escapeHtml(s.origen)} → ${escapeHtml(s.destino)}</td>
-            <td>${estadoBadge(ENVIO_ESTADOS, s.estado)}</td>
-            <td class="number">${fmtNum(s.peso_kg)} kg</td>
-            <td class="number">${s.volumen_m3 != null ? fmtNum(s.volumen_m3) + " m³" : "—"}</td>
-            <td class="number">${s.vehiculo_id ? (vehiculoPlaca(s.vehiculo_id)) : "—"}</td>
-            <td>${s.fecha_limite_sla ? fmtFechaHora(s.fecha_limite_sla) : "—"}</td>
-          </tr>`)
-            .join("")}
-        </tbody></table></div>`
-    : emptyState("📭", "No se encontraron envíos con los filtros actuales.");
+  const rows = state.shipments.map((s, i) =>
+    `<tr class="clickable stagger" style="--i:${i}" data-action="open-envio" data-id="${escapeHtml(s.id)}">
+      <td>${fmtFecha(s.creado_en)}</td>
+      <td class="number">${shortId(s.id)}</td>
+      <td class="number">${shortId(s.cliente_id)}</td>
+      <td>${escapeHtml(s.origen)} → ${escapeHtml(s.destino)}</td>
+      <td>${estadoBadge(ENVIO_ESTADOS, s.estado)}</td>
+      <td class="number">${fmtNum(s.peso_kg)} kg</td>
+      <td class="number">${s.volumen_m3 != null ? fmtNum(s.volumen_m3) + " m³" : "—"}</td>
+      <td class="number">${s.vehiculo_id ? vehiculoPlaca(s.vehiculo_id) : "—"}</td>
+      <td>${s.fecha_limite_sla ? fmtFechaHora(s.fecha_limite_sla) : "—"}</td>
+    </tr>`);
+
+  const tablaHtml = tablaSimple(
+    ["Fecha", "ID", "Cliente", "Origen → Destino", "Estado", "Peso", "Vol.", "Vehículo", "SLA"],
+    rows,
+    { emptyEmoji: "📭", emptyText: "No se encontraron envíos con los filtros actuales." }
+  );
 
   const detalleHtml = state.envioSeleccionadoId ? await detalleEnvioHtml() : "";
 
@@ -586,7 +565,7 @@ async function renderEnvios() {
     <div class="card">${filtrosHtml}
       <div class="card-header" style="border:none;padding-bottom:8px">
         <div><h2>Lista de envíos (${state.shipments.length})</h2></div>
-        <button type="button" class="btn btn-ghost" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
       </div>
       <div style="padding:0">${tablaHtml}</div>
     </div>
@@ -600,18 +579,16 @@ function vehiculoPlaca(id) {
 
 async function detalleEnvioHtml() {
   const id = state.envioSeleccionadoId;
-  const [envio, eventos] = await conTiempo(
-    Promise.all([obtenerEnvio(id), eventosDeEnvio(id)])
-  );
+  const [envio, eventos] = await conTiempo(Promise.all([obtenerEnvio(id), eventosDeEnvio(id)]));
   state.envioDetalle = envio;
-  state.envioEventos = eventos;
+  state.envioEventos = eventos || [];
 
   const yaEntregado = envio.estado === "entregado";
 
-  const timeline = eventos.length
-    ? eventos
+  const timeline = state.envioEventos.length
+    ? state.envioEventos
         .map(
-          (ev, i) => `
+          (ev) => `
         <div class="tl-item">
           <div class="tl-title">${escapeHtml(etiquetaEvento(ev.tipo_evento))}</div>
           <div class="tl-date">${fmtFechaHora(ev.fecha_hora)}</div>
@@ -628,20 +605,20 @@ async function detalleEnvioHtml() {
     <div class="detail-panel">
       <div class="card">
         <div class="card-header">
-          <div><h2>Detalle del envío <span class="badge neutral">${shortId(envio.id)}</span></h2>
-          <div class="sub">${envio.origen} → ${envio.destino}</div></div>
-          <button type="button" class="btn btn-ghost" data-action="close-envio">Cerrar</button>
+          <div><h2>Detalle del envío ${badge(shortId(envio.id))}</h2>
+          <div class="sub">${escapeHtml(envio.origen)} → ${escapeHtml(envio.destino)}</div></div>
+          <button type="button" class="btn btn-ghost small" data-action="close-envio">Cerrar</button>
         </div>
         <div class="card-body"><dl class="kv-list">
-          ${kvHtml("ID completo", envio.id)}
+          ${kvHtml("ID completo", `<span class="mono">${escapeHtml(envio.id)}</span>`)}
           ${kvHtml("Estado", estadoBadge(ENVIO_ESTADOS, envio.estado))}
-          ${kvHtml("Cliente", shortId(envio.cliente_id) + " (" + envio.cliente_id + ")")}
+          ${kvHtml("Cliente", `<span class="mono">${escapeHtml(envio.cliente_id)}</span>`)}
           ${kvHtml("Peso", fmtNum(envio.peso_kg) + " kg")}
           ${kvHtml("Volumen", envio.volumen_m3 != null ? fmtNum(envio.volumen_m3) + " m³" : "—")}
           ${kvHtml("Internacional", envio.es_internacional ? "Sí 🌎" : "No")}
           ${kvHtml("Fecha límite SLA", envio.fecha_limite_sla ? fmtFechaHora(envio.fecha_limite_sla) : "—")}
           ${kvHtml("Vehículo asignado", envio.vehiculo_id ? vehiculoPlaca(envio.vehiculo_id) + " (" + shortId(envio.vehiculo_id) + ")" : "—")}
-          ${kvHtml("Ruta", envio.ruta_id ? shortId(envio.ruta_id) + " (" + envio.ruta_id + ")" : "—")}
+          ${kvHtml("Ruta", envio.ruta_id ? shortId(envio.ruta_id) + ` (<span class="mono">${escapeHtml(envio.ruta_id)}</span>)` : "—")}
           ${kvHtml("Creado", fmtFechaHora(envio.creado_en))}
           ${kvHtml("Actualizado", fmtFechaHora(envio.actualizado_en))}
         </dl></div>
@@ -661,22 +638,6 @@ async function detalleEnvioHtml() {
         </div>
       </div>
     </div>`;
-}
-
-function kvHtml(k, v) {
-  return `<div class="kv"><dt>${escapeHtml(k)}</dt><dd>${v}</dd></div>`;
-}
-
-function etiquetaEvento(tipo) {
-  const mapa = {
-    creado: "🆕 Envío creado",
-    asignado: "🚚 Vehículo asignado",
-    en_transito: "🚛 En tránsito",
-    con_incidencia: "⚠️ Incidencia registrada",
-    devuelto: "↩️ Envío devuelto",
-    entregado: "✅ Entregado",
-  };
-  return mapa[tipo] || tipo;
 }
 
 /* ---------- Modal nuevo envío ---------- */
@@ -860,7 +821,902 @@ async function submitPrueba(form, id) {
 }
 
 /* ==================================================================
-   11. Manejo de eventos (delegación global)
+   9. Rutas
+   ================================================================== */
+
+async function renderRutas() {
+  const rutas = await conTiempo(listarRutas());
+  state.rutas = rutas || [];
+
+  if (!state.rutas.length) {
+    $("#view").innerHTML = `<div class="card"><div class="card-body">${emptyState("🗺️", "No hay rutas planificadas. Creá la primera con el botón «Nueva ruta».")}</div></div>`;
+    return;
+  }
+
+  const rows = state.rutas.map((r, i) => `
+    <tr class="clickable stagger" style="--i:${i}" data-action="open-ruta" data-id="${escapeHtml(r.id)}">
+      <td class="number">${shortId(r.id)}</td>
+      <td class="number">${shortId(r.envio_id)}</td>
+      <td class="number">${r.vehiculo_id ? shortId(r.vehiculo_id) : "—"}</td>
+      <td class="number">${r.distancia_km != null ? fmtNum2(r.distancia_km) + " km" : "—"}</td>
+      <td>${r.paradas && Array.isArray(r.paradas) ? fmtNum(r.paradas.length) + " paradas" : "—"}</td>
+      <td>${r.hora_estimada_llegada ? fmtFechaHora(r.hora_estimada_llegada) : "—"}</td>
+      <td>${r.veces_recalculada > 0 ? `<span class="chip">↻ ${r.veces_recalculada}</span>` : "—"}</td>
+      <td>${fmtFecha(r.creado_en)}</td>
+    </tr>`);
+
+  $("#view").innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><h2>Rutas (${state.rutas.length})</h2><div class="sub">Clic para ver historial de recálculos</div></div>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+      </div>
+      ${tablaSimple(
+        ["ID", "Envío", "Vehículo", "Distancia", "Paradas", "ETA", "Recálculos", "Creada"],
+        rows,
+        { emptyEmoji: "🗺️" }
+      )}
+    </div>`;
+}
+
+function modalNuevaRuta() {
+  openModal({
+    title: "Nueva ruta",
+    body: `
+      <form id="nueva-ruta" data-form="nueva-ruta">
+        <div class="form-grid">
+          <div class="field full"><label for="r-envio">Envío (ID) <span class="req">*</span></label>
+            <input id="r-envio" name="envio_id" required placeholder="UUID del envío" />
+            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="r-envio">Generar UUID</button>
+              · ${state.shipments.length} envíos cargados</div></div>
+          <div class="field"><label for="r-vehiculo">Vehículo (ID)</label>
+            <input id="r-vehiculo" name="vehiculo_id" placeholder="UUID del vehículo" /></div>
+          <div class="field"><label for="r-distancia">Distancia (km)</label>
+            <input id="r-distancia" name="distancia_km" type="number" step="0.01" min="0" placeholder="350.5" /></div>
+          <div class="field full"><label for="r-eta">ETA</label>
+            <input id="r-eta" name="hora_estimada_llegada" type="datetime-local" /></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="nueva-ruta">Crear ruta</button>`,
+  });
+}
+
+async function submitNuevaRuta(form) {
+  const fd = new FormData(form);
+  const payload = {
+    envio_id: String(fd.get("envio_id") || "").trim(),
+    vehiculo_id: fd.get("vehiculo_id") ? String(fd.get("vehiculo_id")).trim() : null,
+    distancia_km: fd.get("distancia_km") ? parseFloat(fd.get("distancia_km")) : null,
+    hora_estimada_llegada: fd.get("hora_estimada_llegada") ? new Date(fd.get("hora_estimada_llegada")).toISOString() : null,
+  };
+  if (!/^[0-9a-fA-F-]{36}$/.test(payload.envio_id)) {
+    toast("El ID de envío debe ser un UUID válido.", "error");
+    return;
+  }
+  try {
+    const creada = await crearRuta(payload);
+    closeModal();
+    toast(`Ruta creada (${shortId(creada.id)})`, "success");
+    renderRutas().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function modalRutaDetalle(ruta) {
+  openModal({
+    title: "Detalle de ruta",
+    body: `
+      <div class="form-grid mb-16">
+        ${kvHtml("ID", `<span class="mono">${escapeHtml(ruta.id)}</span>`)}
+        ${kvHtml("Envío", `<span class="mono">${escapeHtml(ruta.envio_id)}</span>`)}
+        ${kvHtml("Vehículo", ruta.vehiculo_id ? `<span class="mono">${escapeHtml(ruta.vehiculo_id)}</span>` : "—")}
+        ${kvHtml("Distancia", ruta.distancia_km != null ? fmtNum2(ruta.distancia_km) + " km" : "—")}
+        ${kvHtml("ETA", ruta.hora_estimada_llegada ? fmtFechaHora(ruta.hora_estimada_llegada) : "—")}
+        ${kvHtml("Veces recalculada", fmtNum(ruta.veces_recalculada))}
+        ${kvHtml("Creada", fmtFechaHora(ruta.creado_en))}
+      </div>
+      <form id="recalcular-ruta" data-form="recalcular-ruta" data-id="${escapeHtml(ruta.id)}">
+        <div class="form-grid">
+          <div class="field full"><label for="rr-distancia">Nueva distancia (km)</label>
+            <input id="rr-distancia" name="distancia_km" type="number" step="0.01" min="0" placeholder="320" /></div>
+          <div class="field full"><label for="rr-eta">Nueva ETA</label>
+            <input id="rr-eta" name="hora_estimada_llegada" type="datetime-local" /></div>
+          <div class="field full"><label for="rr-motivo">Motivo del recálculo <span class="req">*</span></label>
+            <input id="rr-motivo" name="motivo_recalculo" required maxlength="200" placeholder="Ej.: corte de ruta / tráfico" /></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cerrar</button>
+      <button type="submit" class="btn btn-primary" form="recalcular-ruta">↻ Recalcular</button>`,
+  });
+}
+
+async function submitRecalcularRuta(form, id) {
+  const fd = new FormData(form);
+  const payload = {
+    distancia_km: fd.get("distancia_km") ? parseFloat(fd.get("distancia_km")) : null,
+    hora_estimada_llegada: fd.get("hora_estimada_llegada") ? new Date(fd.get("hora_estimada_llegada")).toISOString() : null,
+    motivo_recalculo: String(fd.get("motivo_recalculo") || "").trim(),
+  };
+  try {
+    await recalcularRuta(id, payload);
+    closeModal();
+    toast("Ruta recalculada", "success");
+    renderRutas().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function showRutaHistorial(id) {
+  let historial = [];
+  try {
+    historial = (await historialRuta(id)) || [];
+  } catch (_err) {
+    historial = [];
+  }
+  const items = historial.length
+    ? historial.map(
+        (h) => `
+      <div class="tl-item">
+        <div class="tl-title">↻ ${escapeHtml(h.motivo_recalculo || "Recálculo")}</div>
+        <div class="tl-date">${fmtFechaHora(h.recalculado_en)}</div>
+        <div class="tl-notes">Distancia anterior: ${h.distancia_km_anterior != null ? fmtNum2(h.distancia_km_anterior) + " km" : "—"} · ETA anterior: ${h.hora_estimada_llegada_anterior ? fmtFechaHora(h.hora_estimada_llegada_anterior) : "—"}</div>
+      </div>`
+      )
+      .join("")
+    : emptyState("🗓️", "Sin recálculos registrados.");
+  openModal({
+    title: "Historial de recálculos",
+    body: `<div class="timeline">${items}</div>`,
+    footer: `<button type="button" class="btn btn-ghost" data-action="close-modal">Cerrar</button>`,
+  });
+}
+
+/* ==================================================================
+   10. Telemetría
+   ================================================================== */
+
+async function renderTelemetria() {
+  if (!state.vehicles.length) {
+    try { state.vehicles = (await listVehiculos()) || []; } catch (_err) { state.vehicles = []; }
+  }
+
+  const vehiculoSeleccionado = state.telemetriaVehiculoId || (state.vehicles[0] ? state.vehicles[0].id : null);
+  state.telemetriaVehiculoId = vehiculoSeleccionado;
+
+  const selector = state.vehicles.length
+    ? `<form class="filters" data-form="filtros-telemetria">
+        <div class="field"><label for="t-vehiculo">Vehículo</label>
+          <select id="t-vehiculo" name="vehiculo_id">
+            ${state.vehicles
+              .map((v) => `<option value="${escapeHtml(v.id)}" ${v.id === vehiculoSeleccionado ? "selected" : ""}>${escapeHtml(v.placa)} — ${escapeHtml(v.tipo)}</option>`)
+              .join("")}
+          </select></div>
+        <button type="submit" class="btn btn-primary">Ver telemetría</button>
+      </form>`
+    : emptyState("🛻", "No hay vehículos. Cargá vehículos en la pestaña Vehículos para ver telemetría.");
+
+  let contenido = emptyState("⌖", "Seleccioná un vehículo para ver sus lecturas.");
+  if (vehiculoSeleccionado) {
+    try {
+      const lecturas = (await listarTelemetria(vehiculoSeleccionado, 40)) || [];
+      if (lecturas.length) {
+        const ultima = lecturas[0];
+        const gauges = [
+          { label: "Velocidad", value: ultima.velocidad_kmh != null ? `${fmtNum2(ultima.velocidad_kmh)} km/h` : "—" },
+          { label: "Combustible", value: ultima.nivel_combustible_pct != null ? fmtPct(ultima.nivel_combustible_pct) : "—" },
+          { label: "Temp. motor", value: ultima.temperatura_motor_c != null ? `${fmtNum2(ultima.temperatura_motor_c)} °C` : "—" },
+          { label: "Temp. carga", value: ultima.temperatura_carga_c != null ? `${fmtNum2(ultima.temperatura_carga_c)} °C` : "—" },
+          { label: "Kilometraje", value: ultima.kilometraje_acumulado_km != null ? `${fmtNum2(ultima.kilometraje_acumulado_km)} km` : "—" },
+          { label: "Horas motor", value: ultima.horas_motor != null ? fmtNum2(ultima.horas_motor) : "—" },
+        ];
+        const kpiHtml = ultima.codigo_obd2
+          ? `<div class="chip" style="background:var(--danger-soft);color:var(--danger)">⚠️ OBD2: ${escapeHtml(ultima.codigo_obd2)}</div>`
+          : `<div class="chip" style="background:var(--success-soft);color:var(--success)">✓ Sin códigos OBD2</div>`;
+
+        const rows = lecturas.map((l, i) => `
+          <tr class="stagger" style="--i:${i}">
+            <td>${fmtFechaHora(l.tiempo)}</td>
+            <td class="number">${l.latitud != null ? fmtNum2(l.latitud) : "—"}, ${l.longitud != null ? fmtNum2(l.longitud) : "—"}</td>
+            <td class="number">${l.velocidad_kmh != null ? fmtNum2(l.velocidad_kmh) : "—"}</td>
+            <td class="number">${l.nivel_combustible_pct != null ? fmtPct(l.nivel_combustible_pct) : "—"}</td>
+            <td class="number">${l.temperatura_motor_c != null ? fmtNum2(l.temperatura_motor_c) + "°C" : "—"}</td>
+            <td class="number">${l.temperatura_carga_c != null ? fmtNum2(l.temperatura_carga_c) + "°C" : "—"}</td>
+            <td class="number">${l.velocidad_kmh != null && l.velocidad_kmh > 80 ? `<span class="chip" style="background:var(--warn-soft);color:var(--warn)">Alta</span>` : "—"}</td>
+          </tr>`);
+
+        contenido = `
+          <div class="grid-4 mt-16">
+            ${gauges.map((g, i) => `<div class="gauge stagger" style="--i:${i}"><span class="gauge-label">${g.label}</span><span class="gauge-value">${g.value}</span></div>`).join("")}
+          </div>
+          <div class="mt-16" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            ${kpiHtml}
+            <span class="chip">Última lectura: ${fmtFechaHora(ultima.tiempo)}</span>
+          </div>
+          <div class="card mt-16">
+            <div class="card-header"><div><h2>Historial de lecturas (${lecturas.length})</h2></div></div>
+            ${tablaSimple(["Tiempo", "Lat, Lng", "Vel. km/h", "Combustible", "Motor °C", "Carga °C", "Estado"], rows, { emptyEmoji: "⌖" })}
+          </div>`;
+      } else {
+        contenido = emptyState("⌖", "Este vehículo no tiene lecturas de telemetría. Registrá la primera con «＋ Registrar lectura».");
+      }
+    } catch (err) {
+      contenido = emptyState("⚠️", err.message);
+    }
+  }
+
+  $("#view").innerHTML = `
+    <div class="card">${selector}</div>
+    ${contenido}`;
+}
+
+function modalNuevaLectura() {
+  openModal({
+    title: "Registrar lectura de telemetría",
+    body: `
+      <form id="nueva-telemetria" data-form="nueva-telemetria">
+        <div class="form-grid">
+          <div class="field full"><label for="tl-vehiculo">Vehículo <span class="req">*</span></label>
+            <select id="tl-vehiculo" name="vehiculo_id" required>
+              ${state.vehicles.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.placa)} — ${escapeHtml(v.tipo)}</option>`).join("")}
+            </select></div>
+          <div class="field"><label for="tl-lat">Latitud <span class="req">*</span></label>
+            <input id="tl-lat" name="latitud" type="number" step="any" required placeholder="-34.6037" /></div>
+          <div class="field"><label for="tl-lng">Longitud <span class="req">*</span></label>
+            <input id="tl-lng" name="longitud" type="number" step="any" required placeholder="-58.3816" /></div>
+          <div class="field"><label for="tl-vel">Velocidad (km/h)</label>
+            <input id="tl-vel" name="velocidad_kmh" type="number" step="0.01" min="0" placeholder="72" /></div>
+          <div class="field"><label for="tl-comb">Combustible (%)</label>
+            <input id="tl-comb" name="nivel_combustible_pct" type="number" step="0.01" min="0" max="100" placeholder="68" /></div>
+          <div class="field"><label for="tl-tmc">Temp. motor (°C)</label>
+            <input id="tl-tmc" name="temperatura_motor_c" type="number" step="0.01" placeholder="92" /></div>
+          <div class="field"><label for="tl-tcc">Temp. carga (°C)</label>
+            <input id="tl-tcc" name="temperatura_carga_c" type="number" step="0.01" placeholder="4" /></div>
+          <div class="field"><label for="tl-km">Kilometraje (km)</label>
+            <input id="tl-km" name="kilometraje_acumulado_km" type="number" step="0.01" min="0" placeholder="45231" /></div>
+          <div class="field"><label for="tl-hm">Horas motor</label>
+            <input id="tl-hm" name="horas_motor" type="number" step="0.01" min="0" placeholder="1234" /></div>
+          <div class="field full"><label for="tl-obd">Código OBD2 (opcional)</label>
+            <input id="tl-obd" name="codigo_obd2" maxlength="40" placeholder="P0301" /></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="nueva-telemetria">Registrar</button>`,
+  });
+}
+
+async function submitNuevaLectura(form) {
+  const fd = new FormData(form);
+  const num = (k) => (fd.get(k) ? parseFloat(fd.get(k)) : null);
+  const payload = {
+    vehiculo_id: String(fd.get("vehiculo_id") || "").trim(),
+    latitud: parseFloat(fd.get("latitud")),
+    longitud: parseFloat(fd.get("longitud")),
+    velocidad_kmh: num("velocidad_kmh"),
+    nivel_combustible_pct: num("nivel_combustible_pct"),
+    temperatura_motor_c: num("temperatura_motor_c"),
+    temperatura_carga_c: num("temperatura_carga_c"),
+    kilometraje_acumulado_km: num("kilometraje_acumulado_km"),
+    horas_motor: num("horas_motor"),
+    codigo_obd2: fd.get("codigo_obd2") ? String(fd.get("codigo_obd2")).trim() : null,
+  };
+  try {
+    const creada = await crearLecturaTelemetria(payload);
+    closeModal();
+    toast(`Lectura registrada para ${shortId(creada.vehiculo_id)}`, "success");
+    state.telemetriaVehiculoId = creada.vehiculo_id;
+    renderTelemetria().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+/* ==================================================================
+   11. Mantenimiento
+   ================================================================== */
+
+async function renderMantenimiento() {
+  if (!state.vehicles.length) {
+    try { state.vehicles = (await listVehiculos()) || []; } catch (_err) { state.vehicles = []; }
+  }
+
+  const vehiculoId = state.mantenimientoVehiculoId || (state.vehicles[0] ? state.vehicles[0].id : null);
+  state.mantenimientoVehiculoId = vehiculoId;
+
+  const selector = state.vehicles.length
+    ? `<form class="filters" data-form="filtros-mantenimiento">
+        <div class="field"><label for="m-vehiculo">Vehículo</label>
+          <select id="m-vehiculo" name="vehiculo_id">
+            ${state.vehicles.map((v) => `<option value="${escapeHtml(v.id)}" ${v.id === vehiculoId ? "selected" : ""}>${escapeHtml(v.placa)} — ${escapeHtml(v.tipo)}</option>`).join("")}
+          </select></div>
+        <button type="submit" class="btn btn-primary">Ver mantenimiento</button>
+      </form>`
+    : emptyState("🛻", "No hay vehículos. Cargá vehículos en la pestaña Vehículos.");
+
+  let contenido = emptyState("✦", "Seleccioná un vehículo.");
+  if (vehiculoId && state.vehicles.length) {
+    const [programas, intervenciones] = await conTiempo(
+      Promise.all([listarProgramas(vehiculoId), listarIntervenciones(vehiculoId)]).catch(() => [[], []])
+    );
+
+    const progRows = (programas || []).map((p, i) => `
+      <tr class="stagger" style="--i:${i}">
+        <td>${escapeHtml(p.tipo)}</td>
+        <td>${estadoBadge(RUTA_URGENCIA, p.prioridad)}</td>
+        <td>${p.fecha_vencimiento ? fmtFecha(p.fecha_vencimiento) : "—"}</td>
+        <td class="number">${p.kilometraje_vencimiento != null ? fmtNum2(p.kilometraje_vencimiento) + " km" : "—"}</td>
+        <td>${fmtFecha(p.creado_en)}</td>
+      </tr>`);
+
+    const intRows = (intervenciones || []).map((x, i) => `
+      <tr class="stagger" style="--i:${i}">
+        <td>${escapeHtml(x.tipo)}</td>
+        <td>${fmtFechaHora(x.realizado_en)}</td>
+        <td class="number">${x.costo != null ? fmtMonto(x.costo) : "—"}</td>
+        <td>${escapeHtml(x.taller || "—")}</td>
+        <td class="number">${x.kilometraje_en_servicio != null ? fmtNum2(x.kilometraje_en_servicio) + " km" : "—"}</td>
+      </tr>`);
+
+    contenido = `
+      <div class="grid-2 mt-16">
+        <div class="card">
+          <div class="card-header"><div><h2>Programas (${(programas || []).length})</h2><div class="sub">Plan de mantenimiento preventivo</div></div></div>
+          ${tablaSimple(["Tipo", "Prioridad", "Vence", "Km venc.", "Creado"], progRows, { emptyEmoji: "🗓️", emptyText: "Sin programas para este vehículo." })}
+        </div>
+        <div class="card">
+          <div class="card-header"><div><h2>Intervenciones (${(intervenciones || []).length})</h2><div class="sub">Servicios realizados</div></div></div>
+          ${tablaSimple(["Tipo", "Realizado", "Costo", "Taller", "Km"], intRows, { emptyEmoji: "🔧", emptyText: "Sin intervenciones registradas." })}
+        </div>
+      </div>`;
+  }
+
+  $("#view").innerHTML = `
+    <div class="card">${selector}</div>
+    ${contenido}`;
+}
+
+function modalAgregarMantenimiento() {
+  openModal({
+    title: "Agregar mantenimiento",
+    body: `
+      <form id="mantenimiento-add" data-form="mantenimiento-add">
+        <div class="form-grid">
+          <div class="field full"><label for="ma-vehiculo">Vehículo <span class="req">*</span></label>
+            <select id="ma-vehiculo" name="vehiculo_id" required>
+              ${state.vehicles.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.placa)} — ${escapeHtml(v.tipo)}</option>`).join("")}
+            </select></div>
+          <div class="field full"><label>Tipo de operación</label>
+            <div style="display:flex;gap:10px">
+              <label class="chip" style="cursor:pointer"><input type="radio" name="tipo_op" value="programa" checked style="width:auto" /> Programa</label>
+              <label class="chip" style="cursor:pointer"><input type="radio" name="tipo_op" value="intervencion" style="width:auto" /> Intervención</label>
+            </div></div>
+          <div class="field"><label for="ma-tipo">Tipo <span class="req">*</span></label>
+            <input id="ma-tipo" name="tipo" list="tipos-mant" required placeholder="Cambio de aceite" />
+            <datalist id="tipos-mant">
+              <option value="Cambio de aceite"></option>
+              <option value="Revisión de frenos"></option>
+              <option value="Rotación de neumáticos"></option>
+              <option value="Filtros y combustible"></option>
+              <option value="Suspensión"></option>
+              <option value="Motor y electrónica"></option>
+            </datalist></div>
+          <div class="field"><label for="ma-prioridad">Prioridad</label>
+            <select id="ma-prioridad" name="prioridad">
+              <option value="media">Media</option>
+              <option value="alta">Alta</option>
+              <option value="baja">Baja</option>
+            </select></div>
+          <div class="field"><label for="ma-fecha">Fecha de vencimiento</label>
+            <input id="ma-fecha" name="fecha_vencimiento" type="date" /></div>
+          <div class="field"><label for="ma-km">Km de vencimiento</label>
+            <input id="ma-km" name="kilometraje_vencimiento" type="number" step="0.01" min="0" /></div>
+          <div class="field"><label for="ma-costo">Costo (intervención)</label>
+            <input id="ma-costo" name="costo" type="number" step="0.01" min="0" /></div>
+          <div class="field"><label for="ma-taller">Taller (intervención)</label>
+            <input id="ma-taller" name="taller" maxlength="150" placeholder="Taller El Camino" /></div>
+          <div class="field"><label for="ma-kmserv">Km en servicio (intervención)</label>
+            <input id="ma-kmserv" name="kilometraje_en_servicio" type="number" step="0.01" min="0" /></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="mantenimiento-add">Guardar</button>`,
+  });
+}
+
+async function submitAgregarMantenimiento(form) {
+  const fd = new FormData(form);
+  const tipoOp = fd.get("tipo_op");
+  const vehiculo_id = String(fd.get("vehiculo_id") || "").trim();
+  const tipo = String(fd.get("tipo") || "").trim();
+  try {
+    if (tipoOp === "programa") {
+      const payload = {
+        vehiculo_id,
+        tipo,
+        prioridad: fd.get("prioridad") || "media",
+        fecha_vencimiento: fd.get("fecha_vencimiento") ? new Date(fd.get("fecha_vencimiento")).toISOString() : null,
+        kilometraje_vencimiento: fd.get("kilometraje_vencimiento") ? parseFloat(fd.get("kilometraje_vencimiento")) : null,
+      };
+      await crearPrograma(payload);
+      toast("Programa de mantenimiento creado", "success");
+    } else {
+      const payload = {
+        vehiculo_id,
+        tipo,
+        costo: fd.get("costo") ? parseFloat(fd.get("costo")) : null,
+        taller: fd.get("taller") ? String(fd.get("taller")).trim() : null,
+        kilometraje_en_servicio: fd.get("kilometraje_en_servicio") ? parseFloat(fd.get("kilometraje_en_servicio")) : null,
+      };
+      await crearIntervencion(payload);
+      toast("Intervención registrada — vehículo liberado para uso", "success");
+    }
+    closeModal();
+    state.mantenimientoVehiculoId = vehiculo_id;
+    renderMantenimiento().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+/* ==================================================================
+   12. Aduana
+   ================================================================== */
+
+async function renderAduana() {
+  let declaraciones = [];
+  try {
+    declaraciones = (await listarDeclaraciones(state.aduanaFiltro || "")) || [];
+  } catch (err) {
+    $("#view").innerHTML = `<div class="card"><div class="card-body">${emptyState("⚠️", err.message)}</div></div>`;
+    return;
+  }
+
+  const filtroHtml = `
+    <form class="filters" data-form="filtros-aduana">
+      <div class="field"><label for="ad-estado">Estado</label>
+        <select id="ad-estado" name="estado">
+          <option value="">Todos</option>
+          ${Object.keys(DECLARACION_ESTADOS)
+            .map((e) => `<option value="${e}" ${state.aduanaFiltro === e ? "selected" : ""}>${DECLARACION_ESTADOS[e].label}</option>`)
+            .join("")}
+        </select></div>
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+    </form>`;
+
+  if (!declaraciones.length) {
+    $("#view").innerHTML = `<div class="card">${filtroHtml}<div class="card-body">${emptyState("⛭", "No hay declaraciones aduaneras. Las declaraciones se generan por eventos de envíos internacionales.")}</div></div>`;
+    return;
+  }
+
+  const rows = declaraciones.map((d, i) => `
+    <tr class="clickable stagger" style="--i:${i}" data-action="edit-declaracion" data-id="${escapeHtml(d.id)}" data-estado="${escapeHtml(d.estado)}">
+      <td class="number">${shortId(d.id)}</td>
+      <td class="number">${shortId(d.envio_id)}</td>
+      <td>${escapeHtml(d.pais_origen)} → ${escapeHtml(d.pais_destino)}</td>
+      <td>${fmtNum((d.documentos || []).length)} docs</td>
+      <td>${estadoBadge(DECLARACION_ESTADOS, d.estado)}</td>
+      <td>${d.motivo_retencion ? escapeHtml(d.motivo_retencion) : "—"}</td>
+      <td>${fmtFecha(d.creado_en)}</td>
+    </tr>`);
+
+  $("#view").innerHTML = `
+    <div class="card">${filtroHtml}
+      <div class="card-header" style="border:none;padding-bottom:8px">
+        <div><h2>Declaraciones (${declaraciones.length})</h2></div>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+      </div>
+      ${tablaSimple(
+        ["ID", "Envío", "Origen → Destino", "Documentos", "Estado", "Motivo retención", "Creada"],
+        rows,
+        { emptyEmoji: "⛭" }
+      )}
+    </div>`;
+}
+
+function modalEditarDeclaracion(id, estadoActual) {
+  openModal({
+    title: "Actualizar declaración aduanera",
+    body: `
+      <form id="declaracion-estado" data-form="declaracion-estado" data-id="${escapeHtml(id)}">
+        <div class="form-grid">
+          <div class="field full"><label for="dc-estado">Nuevo estado <span class="req">*</span></label>
+            <select id="dc-estado" name="estado" required>
+              ${Object.keys(DECLARACION_ESTADOS)
+                .map((e) => `<option value="${e}" ${e === estadoActual ? "selected" : ""}>${DECLARACION_ESTADOS[e].label}</option>`)
+                .join("")}
+            </select></div>
+          <div class="field full"><label for="dc-motivo">Motivo de retención</label>
+            <input id="dc-motivo" name="motivo_retencion" maxlength="255" placeholder="Ej.: documentación incompleta" /></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="declaracion-estado">Actualizar</button>`,
+  });
+}
+
+async function submitEstadoDeclaracion(form, id) {
+  const fd = new FormData(form);
+  const payload = {
+    estado: fd.get("estado"),
+    motivo_retencion: fd.get("motivo_retencion") ? String(fd.get("motivo_retencion")).trim() : null,
+  };
+  try {
+    await actualizarEstadoDeclaracion(id, payload);
+    closeModal();
+    toast("Declaración actualizada", "success");
+    renderAduana().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+/* ==================================================================
+   13. Facturación
+   ================================================================== */
+
+async function renderFacturacion() {
+  const [facturas, costos] = await conTiempo(
+    Promise.all([listarFacturas(), listarCostosRuta()]).catch((err) => {
+      throw err;
+    })
+  );
+
+  const kpis = [
+    { icon: "🧾", cls: "indigo", value: (facturas || []).length, label: "Facturas" },
+    { icon: "✅", cls: "green", value: (facturas || []).filter((f) => f.estado === "pagada").length, label: "Pagadas" },
+    { icon: "⏳", cls: "amber", value: (facturas || []).filter((f) => f.estado === "emitida").length, label: "Emitidas" },
+    { icon: "📏", cls: "blue", value: (costos || []).length, label: "Costos de ruta" },
+  ];
+
+  const kpiHtml = kpis
+    .map(
+      (k, i) => `<div class="kpi stagger" style="--i:${i}">
+          <div class="kpi-icon ${k.cls}">${k.icon}</div>
+          <div><div class="kpi-value">${fmtNum(k.value)}</div><div class="kpi-label">${k.label}</div></div>
+        </div>`
+    )
+    .join("");
+
+  const factRows = (facturas || []).map((f, i) => `
+    <tr class="stagger" style="--i:${i}">
+      <td class="number">${shortId(f.id)}</td>
+      <td class="number">${shortId(f.cliente_id)}</td>
+      <td>${escapeHtml(f.periodo)}</td>
+      <td class="number"><strong>${fmtMonto(f.monto_total)}</strong></td>
+      <td>${estadoBadge(FACTURA_ESTADOS, f.estado)}</td>
+      <td>${fmtFecha(f.creado_en)}</td>
+    </tr>`);
+
+  const costoRows = (costos || []).map((c, i) => `
+    <tr class="stagger" style="--i:${i}">
+      <td class="number">${shortId(c.ruta_id)}</td>
+      <td class="number">${shortId(c.envio_id)}</td>
+      <td class="number">${fmtNum2(c.distancia_km)} km</td>
+      <td class="number">${fmtMonto(c.costo_combustible)}</td>
+      <td class="number">${fmtMonto(c.costo_peajes)}</td>
+      <td class="number">${fmtMonto(c.costo_total)}</td>
+      <td>${fmtFecha(c.creado_en)}</td>
+    </tr>`);
+
+  $("#view").innerHTML = `
+    <div class="kpis">${kpiHtml}</div>
+    <div class="card">
+      <div class="card-header">
+        <div><h2>Facturas (${(facturas || []).length})</h2><div class="sub">Período, monto y estado</div></div>
+        <button type="button" class="btn btn-primary" data-action="cerrar-periodo">🔒 Cerrar período</button>
+      </div>
+      ${tablaSimple(["ID", "Cliente", "Período", "Monto", "Estado", "Emitida"], factRows, { emptyEmoji: "🧾", emptyText: "Sin facturas. Usá «Cerrar período» para generarlas." })}
+    </div>
+    <div class="card">
+      <div class="card-header"><div><h2>Costos de ruta (${(costos || []).length})</h2><div class="sub">Detalle de costos por ruta</div></div></div>
+      ${tablaSimple(["Ruta", "Envío", "Distancia", "Combustible", "Peajes", "Total", "Fecha"], costoRows, { emptyEmoji: "📏", emptyText: "Sin costos calculados." })}
+    </div>`;
+}
+
+function modalTarifa() {
+  openModal({
+    title: "Configurar tarifa de cliente",
+    body: `
+      <form id="tarifa-form" data-form="tarifa-form">
+        <div class="form-grid">
+          <div class="field full"><label for="t-cliente">Cliente (ID) <span class="req">*</span></label>
+            <input id="t-cliente" name="cliente_id" required placeholder="UUID del cliente" />
+            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="t-cliente">Generar UUID</button></div></div>
+          <div class="field full"><label for="t-modelo">Modelo de tarifa</label>
+            <select id="t-modelo" name="modelo">
+              <option value="por_km">Por kilómetro</option>
+              <option value="por_envio">Por envío</option>
+              <option value="tarifa_plana">Tarifa plana</option>
+            </select></div>
+          <div class="field full"><label for="t-valor">Valor <span class="req">*</span></label>
+            <input id="t-valor" name="valor" type="number" step="0.01" min="0" required placeholder="1500" /></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="tarifa-form">Guardar tarifa</button>`,
+  });
+}
+
+async function submitTarifa(form) {
+  const fd = new FormData(form);
+  const payload = {
+    cliente_id: String(fd.get("cliente_id") || "").trim(),
+    modelo: fd.get("modelo"),
+    valor: parseFloat(fd.get("valor")),
+  };
+  if (!/^[0-9a-fA-F-]{36}$/.test(payload.cliente_id)) {
+    toast("El ID de cliente debe ser un UUID válido.", "error");
+    return;
+  }
+  try {
+    await configurarTarifa(payload);
+    closeModal();
+    toast("Tarifa configurada", "success");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function runCerrarPeriodo() {
+  try {
+    const facturas = await cerrarPeriodoFacturas();
+    toast(`Período cerrado: ${(facturas || []).length} facturas generadas`, "success");
+    renderFacturacion().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+/* ==================================================================
+   14. Notificaciones
+   ================================================================== */
+
+async function renderNotificaciones() {
+  const notis = await conTiempo(listarNotificaciones(60));
+
+  if (!notis || !notis.length) {
+    $("#view").innerHTML = `<div class="card"><div class="card-body">${emptyState("🔔", "No hay notificaciones. Se generan cuando los servicios publican eventos en RabbitMQ.")}</div></div>`;
+    return;
+  }
+
+  const rows = notis.map((n, i) => `
+    <tr class="stagger" style="--i:${i}">
+      <td>${fmtFechaHora(n.enviado_en)}</td>
+      <td><span class="chip">${escapeHtml(n.canal)}</span></td>
+      <td><strong>${escapeHtml(n.destinatario_tipo)}</strong></td>
+      <td>${escapeHtml(n.mensaje)}</td>
+      <td><span class="chip">${escapeHtml(n.evento_origen)}</span></td>
+    </tr>`);
+
+  $("#view").innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><h2>Notificaciones (${notis.length})</h2><div class="sub">Últimos mensajes emitidos</div></div>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+      </div>
+      ${tablaSimple(["Enviada", "Canal", "Destinatario", "Mensaje", "Evento"], rows, { emptyEmoji: "🔔" })}
+    </div>`;
+}
+
+function modalPreferencias() {
+  openModal({
+    title: "Preferencias de notificación",
+    body: `
+      <form id="preferencias-form" data-form="preferencias-form">
+        <div class="form-grid">
+          <div class="field full"><label for="pf-cliente">Cliente (ID) <span class="req">*</span></label>
+            <input id="pf-cliente" name="cliente_id" required placeholder="UUID del cliente" />
+            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="pf-cliente">Generar UUID</button></div></div>
+          <div class="field full"><label for="pf-idioma">Idioma</label>
+            <select id="pf-idioma" name="idioma">
+              <option value="es">Español</option>
+              <option value="en">English</option>
+              <option value="pt">Português</option>
+            </select></div>
+          <div class="field full"><label for="pf-canal">Canal preferido</label>
+            <select id="pf-canal" name="canal_preferido">
+              <option value="">Sin preferencia</option>
+              <option value="email">Email</option>
+              <option value="sms">SMS</option>
+              <option value="push">Push</option>
+            </select></div>
+        </div>
+      </form>`,
+    footer: `
+      <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
+      <button type="submit" class="btn btn-primary" form="preferencias-form">Guardar</button>`,
+  });
+}
+
+async function submitPreferencias(form) {
+  const fd = new FormData(form);
+  const payload = {
+    idioma: fd.get("idioma") || "es",
+    canal_preferido: fd.get("canal_preferido") || null,
+  };
+  try {
+    await configurarPreferencia(String(fd.get("cliente_id") || "").trim(), payload);
+    closeModal();
+    toast("Preferencias guardadas", "success");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+/* ==================================================================
+   15. Analítica
+   ================================================================== */
+
+async function runEtlManual() {
+  try {
+    const r = await ejecutarEtl();
+    toast(`ETL ejecutado: ${r && r.mensaje ? r.mensaje : "procesamiento completo"}`, "success");
+    renderAnalitica().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function renderAnalitica() {
+  let resumen = null;
+  try { resumen = await analyticsResumen(); } catch (_err) { resumen = null; }
+
+  const kpis = [
+    { icon: "🛻", cls: "indigo", value: resumen ? resumen.total_vehiculos : "—", label: "Vehículos" },
+    { icon: "🧑‍✈️", cls: "green", value: resumen ? resumen.total_conductores : "—", label: "Conductores" },
+    { icon: "🚚", cls: "blue", value: resumen ? resumen.envios_en_transito : "—", label: "En tránsito" },
+    { icon: "✅", cls: "green", value: resumen ? resumen.envios_entregados_historico : "—", label: "Entregados" },
+    { icon: "⚠️", cls: "red", value: resumen ? resumen.envios_con_incidencia_historico : "—", label: "Con incidencia" },
+    { icon: "🎯", cls: "amber", value: resumen ? fmtPct(resumen.tasa_cumplimiento_sla_global_pct) : "—", label: "Cumplimiento SLA" },
+  ];
+
+  const kpiHtml = kpis
+    .map(
+      (k, i) => `<div class="kpi stagger" style="--i:${i}">
+          <div class="kpi-icon ${k.cls}">${k.icon}</div>
+          <div><div class="kpi-value">${escapeHtml(k.value)}</div><div class="kpi-label">${k.label}</div></div>
+        </div>`
+    )
+    .join("");
+
+  // Ejecutar consultas clave (tolera fallos por separado)
+  const [entregas, utilizacion, costoKm, eficiencia, proyeccion] = await Promise.all([
+    analyticsEntregasDiarias(30).catch(() => []),
+    analyticsUtilizacionFlota().catch(() => []),
+    analyticsCostoPorKm().catch(() => []),
+    analyticsEficienciaCombustible().catch(() => []),
+    analyticsProyeccionMantenimiento(90).catch(() => []),
+  ]);
+
+  // Chart entregas diarias
+  let chartHtml = emptyState("◧", "Ejecutá el ETL para generar datos de entregas.");
+  if (entregas && entregas.length) {
+    const max = Math.max(...entregas.map((e) => Number(e.total_entregados || 0)), 1);
+    const maxMostrar = entregas.slice(-15);
+    chartHtml = `<div class="chart-bars">${maxMostrar
+      .map((e) => {
+        const h = Math.round((Number(e.total_entregados || 0) / max) * 100);
+        return `<div class="chart-col" title="Fecha: ${escapeHtml(e.fecha)} — ${fmtNum(e.total_entregados)} entregados">
+          <div class="chart-bar" style="height:${Math.max(h, 4)}%"></div>
+          <div class="chart-label">${escShortDate(e.fecha)}</div>
+        </div>`;
+      })
+      .join("")}</div>`;
+  }
+
+  // Utilización de flota
+  let utilizacionHtml = emptyState("🛻", "Sin datos de utilización.");
+  if (utilizacion && utilizacion.length) {
+    const enUso = utilizacion.filter((u) => u.en_uso).length;
+    utilizacionHtml = `
+      <div class="chip mt-8 mb-16">${enUso} de ${utilizacion.length} vehículos en uso</div>
+      <div class="hlist">
+        ${utilizacion.map(
+          (u, i) => `<div class="hlist-row stagger" style="--i:${i}">
+            <div class="hlist-name">${escapeHtml(u.placa)} <span class="text-3 small">· ${escapeHtml(u.tipo)}</span></div>
+            <div class="hlist-track"><div class="fill" style="width:${u.en_uso ? 100 : 12}%;background:${u.en_uso ? "#4f46e5" : "#cbd5e1"}"></div></div>
+            <div class="hlist-val">${u.en_uso ? (u.estado_envio_actual || "en uso") : "disponible"}</div>
+          </div>`
+        ).join("")}
+      </div>`;
+  }
+
+  // Costo por km
+  let costoHtml = emptyState("📏", "Sin datos de costos.");
+  if (costoKm && costoKm.length) {
+    const maxCosto = Math.max(...costoKm.map((c) => Number(c.costo_promedio_por_km || 0)), 1);
+    costoHtml = `<div class="hlist">
+      ${costoKm
+        .map(
+          (c, i) => `<div class="hlist-row stagger" style="--i:${i}">
+            <div class="hlist-name">${escapeHtml(c.tipo_vehiculo)}</div>
+            <div class="hlist-track"><div class="fill" style="width:${Math.round((Number(c.costo_promedio_por_km || 0) / maxCosto) * 100)}%;background:#7c3aed"></div></div>
+            <div class="hlist-val">$${fmtNum2(c.costo_promedio_por_km)}/km</div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+  }
+
+  // Eficiencia de combustible
+  let eficienciaHtml = emptyState("⛽", "Sin datos de eficiencia.");
+  if (eficiencia && eficiencia.length) {
+    eficienciaHtml = `<div class="hlist">
+      ${eficiencia
+        .map(
+          (e, i) => `<div class="hlist-row stagger" style="--i:${i}">
+            <div class="hlist-name">${escapeHtml(e.nombre_conductor)}</div>
+            <div class="hlist-track"><div class="fill" style="width:${Math.min(100, (Number(e.km_por_pct_combustible || 0) / 12) * 100)}%;background:${e.clasificacion === "eficiente" ? "#16a34a" : e.clasificacion === "regular" ? "#d97706" : "#dc2626"}"></div></div>
+            <div class="hlist-val">${fmtNum2(e.km_por_pct_combustible)} km/%</div>
+          </div>`
+        )
+        .join("")}
+    </div>`;
+  }
+
+  // Proyección de mantenimiento
+  let proyeccionHtml = emptyState("✦", "Sin proyecciones. Ejecutá el ETL.");
+  if (proyeccion && proyeccion.length) {
+    proyeccionHtml = tablaSimple(
+      ["Vehículo", "Mantenimiento", "Vence", "Días rest.", "Urgencia"],
+      proyeccion.map((p, i) => `
+        <tr class="stagger" style="--i:${i}">
+          <td><strong>${escapeHtml(p.placa_vehiculo || shortId(p.vehiculo_id))}</strong></td>
+          <td>${escapeHtml(p.tipo_mantenimiento)}</td>
+          <td>${p.fecha_vencimiento ? fmtFecha(p.fecha_vencimiento) : "—"}</td>
+          <td class="number">${p.dias_restantes != null ? fmtNum(p.dias_restantes) : "—"}</td>
+          <td>${estadoBadge(RUTA_URGENCIA, p.urgencia)}</td>
+        </tr>`),
+      { emptyEmoji: "✦" }
+    );
+  }
+
+  $("#view").innerHTML = `
+    ${resumen ? `<div class="mb-16"><span class="chip">Última actualización ETL: ${fmtFechaHora(resumen.ultima_actualizacion_etl)}</span></div>` : `<div class="mb-16"><span class="chip">Analytics sin resumen. Probá «▶ Ejecutar ETL».</span></div>`}
+    <div class="kpis">${kpiHtml}</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><div><h2>Entregas diarias (30 días)</h2><div class="sub">Total entregadas por día</div></div></div>
+        <div class="card-body">${chartHtml}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h2>Utilización de flota</h2><div class="sub">Estado actual por vehículo</div></div></div>
+        <div class="card-body">${utilizacionHtml}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h2>Costo por km</h2><div class="sub">Promedio según tipo de vehículo</div></div></div>
+        <div class="card-body">${costoHtml}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h2>Eficiencia de combustible</h2><div class="sub">km por unidad de combustible consumida</div></div></div>
+        <div class="card-body">${eficienciaHtml}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div><h2>Proyección de mantenimiento (90 días)</h2><div class="sub">Vencimientos próximos por vehículo</div></div></div>
+      <div class="card-body" style="padding:0">${proyeccionHtml}</div>
+    </div>`;
+}
+
+function escShortDate(fecha) {
+  if (!fecha) return "—";
+  try {
+    return new Date(fecha).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+  } catch (_err) {
+    return String(fecha).slice(5);
+  }
+}
+
+/* ==================================================================
+   16. Manejo de eventos (delegación global)
    ================================================================== */
 
 async function onAction(action, el) {
@@ -919,11 +1775,9 @@ async function onAction(action, el) {
 
     case "gen-uuid": {
       const target = $(`#${el.dataset.target}`);
-      if (target && crypto.randomUUID) {
-        target.value = crypto.randomUUID();
-      } else {
-        toast("Tu navegador no soporta generación de UUID", "error");
-      }
+      const id = uuid();
+      if (target && id) target.value = id;
+      else toast("Tu navegador no soporta generación de UUID", "error");
       break;
     }
 
@@ -936,6 +1790,29 @@ async function onAction(action, el) {
     case "modal-prueba":
       modalPrueba(el.dataset.id);
       break;
+
+    /* Vehículos */
+    case "change-vehiculo-estado":
+      modalCambioEstadoVehiculo(el.dataset.id, el.dataset.estado);
+      break;
+
+    /* Rutas */
+    case "open-ruta":
+      showRutaHistorial(el.dataset.id);
+      break;
+
+    /* Aduana */
+    case "edit-declaracion":
+      modalEditarDeclaracion(el.dataset.id, el.dataset.estado);
+      break;
+
+    /* Facturación */
+    case "cerrar-periodo":
+      runCerrarPeriodo();
+      break;
+
+    default:
+      break;
   }
 }
 
@@ -944,6 +1821,9 @@ async function onFormSubmit(form) {
   switch (nombre) {
     case "nuevo-vehiculo":
       await submitNuevoVehiculo(form);
+      break;
+    case "estado-vehiculo":
+      await submitEstadoVehiculo(form, form.dataset.id);
       break;
     case "nuevo-conductor":
       await submitNuevoConductor(form);
@@ -966,6 +1846,51 @@ async function onFormSubmit(form) {
       break;
     case "prueba-envio":
       await submitPrueba(form, form.dataset.id);
+      break;
+
+    case "nueva-ruta":
+      await submitNuevaRuta(form);
+      break;
+    case "recalcular-ruta":
+      await submitRecalcularRuta(form, form.dataset.id);
+      break;
+
+    case "filtros-telemetria": {
+      const fd = new FormData(form);
+      state.telemetriaVehiculoId = fd.get("vehiculo_id");
+      renderTelemetria().catch(console.error);
+      break;
+    }
+    case "nueva-telemetria":
+      await submitNuevaLectura(form);
+      break;
+
+    case "filtros-mantenimiento": {
+      const fd = new FormData(form);
+      state.mantenimientoVehiculoId = fd.get("vehiculo_id");
+      renderMantenimiento().catch(console.error);
+      break;
+    }
+    case "mantenimiento-add":
+      await submitAgregarMantenimiento(form);
+      break;
+
+    case "filtros-aduana": {
+      const fd = new FormData(form);
+      state.aduanaFiltro = fd.get("estado") || "";
+      renderAduana().catch(console.error);
+      break;
+    }
+    case "declaracion-estado":
+      await submitEstadoDeclaracion(form, form.dataset.id);
+      break;
+
+    case "tarifa-form":
+      await submitTarifa(form);
+      break;
+
+    case "preferencias-form":
+      await submitPreferencias(form);
       break;
   }
 }
@@ -1009,14 +1934,14 @@ function closeSidebarMobile() {
 $("#btn-config-api").addEventListener("click", modalConfigApi);
 
 /* ==================================================================
-   12. Arranque
+   17. Arranque
    ================================================================== */
 
 (async function init() {
   try {
     const [vehicles, drivers] = await Promise.all([listVehiculos(), listConductores()]);
-    state.vehicles = vehicles;
-    state.drivers = drivers;
+    state.vehicles = vehicles || [];
+    state.drivers = drivers || [];
   } catch (_err) {
     /* la API puede estar caída; se intenta igual */
   }

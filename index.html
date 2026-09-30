@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogiTrack — Panel de Gestión</title>
+  <meta name="description" content="LogiTrack: panel de gestión de flota, envíos, rutas, telemetría, mantenimiento, aduana, notificaciones, facturación y analítica." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234f46e5'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>LT</text></svg>" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -12,25 +14,55 @@
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="brand-logo">LT</div>
+        <div class="brand-logo" aria-hidden="true">LT</div>
         <div class="brand-text">
           <strong>LogiTrack</strong>
-          <span>Panel de gestión</span>
+          <span>Panorama de logística</span>
         </div>
       </div>
 
-      <nav class="nav">
+      <nav class="nav" id="nav">
+        <span class="nav-label">General</span>
         <button class="nav-item" data-nav="dashboard">
-          <span class="nav-icon">📊</span> Dashboard
+          <span class="nav-icon">◈</span> Dashboard
         </button>
+
+        <span class="nav-label">Flota</span>
         <button class="nav-item" data-nav="vehiculos">
-          <span class="nav-icon">🚛</span> Vehículos
+          <span class="nav-icon">▣</span> Vehículos
         </button>
         <button class="nav-item" data-nav="conductores">
-          <span class="nav-icon">🧑‍✈️</span> Conductores
+          <span class="nav-icon">◇</span> Conductores
         </button>
+        <button class="nav-item" data-nav="telemetria">
+          <span class="nav-icon">⌖</span> Telemetría
+        </button>
+        <button class="nav-item" data-nav="mantenimiento">
+          <span class="nav-icon">✦</span> Mantenimiento
+        </button>
+
+        <span class="nav-label">Operaciones</span>
         <button class="nav-item" data-nav="envios">
-          <span class="nav-icon">📦</span> Envíos
+          <span class="nav-icon">▤</span> Envíos
+        </button>
+        <button class="nav-item" data-nav="rutas">
+          <span class="nav-icon">⤳</span> Rutas
+        </button>
+        <button class="nav-item" data-nav="aduana">
+          <span class="nav-icon">⛭</span> Aduana
+        </button>
+
+        <span class="nav-label">Negocio</span>
+        <button class="nav-item" data-nav="facturacion">
+          <span class="nav-icon">◫</span> Facturación
+        </button>
+        <button class="nav-item" data-nav="notificaciones">
+          <span class="nav-icon">❏</span> Notificaciones
+        </button>
+
+        <span class="nav-label">Inteligencia</span>
+        <button class="nav-item" data-nav="analitica">
+          <span class="nav-icon">◧</span> Analítica
         </button>
       </nav>
 
@@ -39,7 +71,9 @@
           <span class="dot"></span>
           <span id="api-status-text">Verificando API…</span>
         </div>
-        <button class="ghost-btn small" id="btn-config-api" type="button">⚙️ Configurar API</button>
+        <button class="ghost-btn small" id="btn-config-api" type="button">
+          <span class="nav-icon">⚙</span> Configurar API
+        </button>
       </div>
     </aside>
 
@@ -66,6 +100,7 @@
 
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

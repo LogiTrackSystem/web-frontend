@@ -1,5 +1,7 @@
 /**
  * Cliente HTTP para las APIs de LogiTrack (a través del API Gateway).
+ * Cubre los 10 microservicios: fleet, shipment, routing, tracking,
+ * maintenance, customs, notification, billing, analytics + gateway.
  */
 "use strict";
 
@@ -77,6 +79,12 @@ function extractError(data, res) {
   return `Error HTTP ${res.status} ${res.statusText || ""}`.trim();
 }
 
+// ---------- Salud ----------
+
+function healthGateway() {
+  return request("/health");
+}
+
 // ---------- Fleet (vehículos y conductores) ----------
 
 function listVehiculos() {
@@ -87,6 +95,9 @@ function getVehiculo(id) {
 }
 function crearVehiculo(data) {
   return request("/api/v1/vehiculos", { method: "POST", body: data });
+}
+function cambiarEstadoVehiculo(id, data) {
+  return request(`/api/v1/vehiculos/${id}/estado`, { method: "PATCH", body: data });
 }
 
 function listConductores() {
@@ -124,8 +135,121 @@ function registrarPruebaEntrega(id, data) {
   return request(`/api/v1/envios/${id}/prueba-entrega`, { method: "POST", body: data });
 }
 
-// ---------- Salud ----------
+// ---------- Routing (rutas) ----------
 
-function healthGateway() {
-  return request("/health");
+function listarRutas(envio_id) {
+  const qs = envio_id ? `?envio_id=${encodeURIComponent(envio_id)}` : "";
+  return request(`/api/v1/rutas${qs}`);
+}
+function obtenerRuta(id) {
+  return request(`/api/v1/rutas/${id}`);
+}
+function historialRuta(id) {
+  return request(`/api/v1/rutas/${id}/historial`);
+}
+function crearRuta(data) {
+  return request("/api/v1/rutas", { method: "POST", body: data });
+}
+function recalcularRuta(id, data) {
+  return request(`/api/v1/rutas/${id}/recalcular`, { method: "PATCH", body: data });
+}
+
+// ---------- Tracking (telemetría) ----------
+
+function crearLecturaTelemetria(data) {
+  return request("/api/v1/telemetria", { method: "POST", body: data });
+}
+function listarTelemetria(vehiculo_id, limite = 60) {
+  return request(`/api/v1/telemetria/${vehiculo_id}?limite=${limite}`);
+}
+
+// ---------- Maintenance ----------
+
+function crearPrograma(data) {
+  return request("/api/v1/programas", { method: "POST", body: data });
+}
+function listarProgramas(vehiculo_id) {
+  return request(`/api/v1/programas/${vehiculo_id}`);
+}
+function crearIntervencion(data) {
+  return request("/api/v1/intervenciones", { method: "POST", body: data });
+}
+function listarIntervenciones(vehiculo_id) {
+  return request(`/api/v1/intervenciones/${vehiculo_id}`);
+}
+
+// ---------- Customs (aduana) ----------
+
+function listarDeclaraciones(estado) {
+  const qs = estado ? `?estado=${encodeURIComponent(estado)}` : "";
+  return request(`/api/v1/declaraciones${qs}`);
+}
+function obtenerDeclaracion(envio_id) {
+  return request(`/api/v1/declaraciones/${envio_id}`);
+}
+function actualizarEstadoDeclaracion(id, data) {
+  return request(`/api/v1/declaraciones/${id}/estado`, { method: "PATCH", body: data });
+}
+
+// ---------- Notification ----------
+
+function listarNotificaciones(limite = 50) {
+  return request(`/api/v1/notificaciones?limite=${limite}`);
+}
+function obtenerPreferencia(cliente_id) {
+  return request(`/api/v1/preferencias/${cliente_id}`);
+}
+function configurarPreferencia(cliente_id, data) {
+  return request(`/api/v1/preferencias/${cliente_id}`, { method: "POST", body: data });
+}
+
+// ---------- Billing ----------
+
+function listarFacturas(filtros = {}) {
+  const params = new URLSearchParams();
+  if (filtros.cliente_id) params.set("cliente_id", filtros.cliente_id);
+  if (filtros.periodo) params.set("periodo", filtros.periodo);
+  if (filtros.estado) params.set("estado", filtros.estado);
+  const qs = params.toString();
+  return request(`/api/v1/facturas${qs ? "?" + qs : ""}`);
+}
+function cerrarPeriodoFacturas() {
+  return request("/api/v1/facturas/cerrar-periodo", { method: "POST" });
+}
+function listarCostosRuta(envio_id) {
+  const qs = envio_id ? `?envio_id=${encodeURIComponent(envio_id)}` : "";
+  return request(`/api/v1/costos-ruta${qs}`);
+}
+function configurarTarifa(data) {
+  return request("/api/v1/tarifas", { method: "POST", body: data });
+}
+function obtenerTarifa(cliente_id) {
+  return request(`/api/v1/tarifas/${cliente_id}`);
+}
+
+// ---------- Analytics ----------
+
+function analyticsResumen() {
+  return request("/api/v1/analytics/resumen");
+}
+function analyticsEntregasDiarias(dias = 30) {
+  return request(`/api/v1/analytics/entregas-diarias?dias=${dias}`);
+}
+function analyticsUtilizacionFlota() {
+  return request("/api/v1/analytics/utilizacion-flota");
+}
+function analyticsCostoPorKm() {
+  return request("/api/v1/analytics/costo-por-km");
+}
+function analyticsEficienciaCombustible(limite = 50) {
+  return request(`/api/v1/analytics/eficiencia-combustible?limite=${limite}`);
+}
+function analyticsProyeccionMantenimiento(dias = 90) {
+  return request(`/api/v1/analytics/proyeccion-mantenimiento?dias=${dias}`);
+}
+function analyticsActividadReciente(limite = 20) {
+  return request(`/api/v1/analytics/actividad-reciente?limite=${limite}`);
+}
+function ejecutarEtl() {
+  return request("/api/v1/analytics/etl", { method: "POST" });
 }
