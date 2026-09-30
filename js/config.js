@@ -8,7 +8,9 @@
  */
 const CONFIG = {
   API_BASE_URL: "http://localhost:8002",
-  API_TIMEOUT_MS: 10000,
+  // 20 s: holgado para accesos por túnel/red lenta, pero sigue fallando rápido.
+  // Las operaciones largas (ETL) manejan su propio timeout en api.js.
+  API_TIMEOUT_MS: 20000,
 };
 
 (function resolvApiUrl() {

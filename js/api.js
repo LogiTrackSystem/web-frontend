@@ -15,8 +15,11 @@ class ApiError extends Error {
 }
 
 async function request(path, options = {}) {
+  // Timeout por request: el global (CONFIG.API_TIMEOUT_MS) sirve para el
+  // resto, pero las operaciones largas (ETL) necesitan margen propio.
+  const timeoutMs = options.timeoutMs || CONFIG.API_TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIG.API_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const opts = {
       method: options.method || "GET",
@@ -45,7 +48,7 @@ async function request(path, options = {}) {
     if (err instanceof ApiError) throw err;
     if (err.name === "AbortError") {
       throw new ApiError(
-        `La API no respondió en ${CONFIG.API_TIMEOUT_MS} ms. Verificá que el API Gateway esté corriendo en ${CONFIG.API_BASE_URL}.`,
+        `La API no respondió en ${Math.round(timeoutMs / 1000)} s. Verificá que el API Gateway esté corriendo en ${CONFIG.API_BASE_URL}.`,
         0,
         null
       );
@@ -251,5 +254,7 @@ function analyticsActividadReciente(limite = 20) {
   return request(`/api/v1/analytics/actividad-reciente?limite=${limite}`);
 }
 function ejecutarEtl() {
-  return request("/api/v1/analytics/etl", { method: "POST" });
+  // El ETL recorre todos los microservicios: puede tardar bastante más que
+  // el resto de endpoints (el Gateway lo proxea con timeout de 180 s).
+  return request("/api/v1/analytics/etl", { method: "POST", timeoutMs: 180000 });
 }
