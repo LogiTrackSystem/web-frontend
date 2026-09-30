@@ -169,3 +169,89 @@ function uuid() {
 function kvHtml(k, v) {
   return `<div class="kv"><dt>${escapeHtml(k)}</dt><dd>${v}</dd></div>`;
 }
+
+/* ---------- Skeleton de carga ---------------------------------
+   En lugar del spinner estático: bloques placeholder con brillo que
+   barren (shimmer). Solo transform/opacity; respeta reduced-motion. */
+
+function skeletonHtml() {
+  const skKpis = Array.from({ length: 6 }, () => `<div class="sk kpi-sk"></div>`).join("");
+  const skRows = Array.from({ length: 5 }, () => `<div class="sk row-sk"></div>`).join("");
+  const skCard = (extra) => `<div class="sk card-sk ${extra}"><div class="sk block"></div>${skRows}</div>`;
+  return `
+    <div class="skeleton" role="status" aria-label="Cargando">
+      <div class="kpis">${skKpis}</div>
+      <div class="grid-2">${skCard("")}${skCard("")}</div>
+      ${skCard("wide")}
+    </div>`;
+}
+
+/* ---------- Count-up de valores ---------------------------------
+   Anima el texto de un elemento con data-valor desde 0 (o data-inicio)
+   hasta el objetivo. Solo cambia textContent (compatible, accesible);
+   con prefers-reduced-motion salta directo al valor final. */
+
+function animarValores(root = document) {
+  $$("[data-valor]", root).forEach((el) => {
+    const objetivo = Number(el.dataset.valor || 0);
+    if (!Number.isFinite(objetivo)) { el.textContent = "—"; return; }
+    const decimales = el.dataset.decimals !== undefined ? Number(el.dataset.decimals) : (Number.isInteger(objetivo) ? 0 : 2);
+    const prefijo = el.dataset.prefix || "";
+    const sufijo = el.dataset.suffix || "";
+    const dur = el.dataset.dur ? Number(el.dataset.dur) : 750;
+    const inicio = el.dataset.inicio !== undefined ? Number(el.dataset.inicio) : 0;
+    const format = (v) =>
+      prefijo + v.toLocaleString("es-AR", { minimumFractionDigits: decimales, maximumFractionDigits: decimales }) + sufijo;
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = format(objetivo); return; }
+
+    const t0 = performance.now();
+    const paso = (t) => {
+      if (!el.isConnected) return; // la vista cambió; no seguir animando
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3); // ease-out cúbico
+      el.textContent = format(inicio + (objetivo - inicio) * eased);
+      if (p < 1) requestAnimationFrame(paso);
+    };
+    requestAnimationFrame(paso);
+  });
+}
+
+/* ---------- Gauges radiales (donut) ---------------------------
+   SVG con arco que crece con stroke-dashoffset (transición, no
+   keyframe). El valor central usa count-up vía data-valor. */
+
+function gaugeDonut(opts) {
+  const r = 30;
+  const pct = Math.max(0, Math.min(100, Number(opts.pct) || 0));
+  const esNum = opts.valor != null && Number.isFinite(Number(opts.valor));
+  const valor = esNum
+    ? `<text class="gauge-ring-text" x="36" y="40" text-anchor="middle" data-valor="${Number(opts.valor)}" data-decimals="${opts.decimals || 1}" data-prefix="${opts.prefix || ""}" data-suffix="${opts.suffix || ""}"></text>`
+    : `<text class="gauge-ring-text" x="36" y="40" text-anchor="middle">—</text>`;
+  return `
+  <div class="gauge-ring-wrap stagger" style="--i:0">
+    <svg class="gauge-ring" viewBox="0 0 72 72" width="76" height="76" aria-hidden="true">
+      <circle class="gauge-ring-bg" cx="36" cy="36" r="${r}"></circle>
+      <circle class="gauge-ring-val" cx="36" cy="36" r="${r}" data-pct="${pct}" style="stroke:${opts.color || "var(--primary)"}"></circle>
+      ${valor}
+    </svg>
+    <span class="gauge-ring-label">${escapeHtml(opts.label)}</span>
+  </div>`;
+}
+
+function animarGauges(root = document) {
+  $$(".gauge-ring-val", root).forEach((circle) => {
+    const c = 2 * Math.PI * 30;
+    const pct = Number(circle.dataset.pct || 0);
+    circle.style.strokeDasharray = c;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      circle.style.strokeDashoffset = c * (1 - pct / 100);
+      return;
+    }
+    circle.style.strokeDashoffset = c;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      circle.style.transition = "stroke-dashoffset 950ms var(--ease-out)";
+      circle.style.strokeDashoffset = c * (1 - pct / 100);
+    }));
+  });
+}

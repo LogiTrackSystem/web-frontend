@@ -956,6 +956,93 @@ select {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ============================================================
+   Gauges radiales (donut) — Telemetría
+   El arco crece con stroke-dashoffset (transición orquestada
+   desde JS); el valor central usa count-up.
+   ============================================================ */
+
+.gauge-ring-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 8px 13px;
+  box-shadow: var(--shadow-xs);
+}
+
+.gauge-ring { transform: rotate(-90deg); display: block; }
+
+.gauge-ring-bg { fill: none; stroke: var(--surface-2); stroke-width: 8; }
+
+.gauge-ring-val {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: none; /* el timing lo define animarGauges() desde JS */
+}
+
+.gauge-ring-text {
+  fill: var(--text);
+  font-size: 13.5px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-ring-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  font-weight: 650;
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* ============================================================
+   Skeleton de carga — bloques placeholder con brillo que barre.
+   Solo transform (movimiento aparente), respeta reduced-motion.
+   ============================================================ */
+
+.skeleton { display: flex; flex-direction: column; gap: 20px; }
+
+.sk {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+  animation: sk-shine 1.3s var(--ease-in-out) infinite;
+}
+
+@keyframes sk-shine { to { transform: translateX(100%); } }
+
+.kpi-sk { height: 74px; }
+
+.card-sk {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+.card-sk.wide { padding-bottom: 26px; }
+
+.card-sk .block { height: 15px; width: 46%; border-radius: 6px; background: rgba(23, 24, 41, 0.08); }
+.row-sk { height: 13px; border-radius: 6px; background: rgba(23, 24, 41, 0.05); }
+
+/* ============================================================
    Toasts — transiciones (interrumpibles), no keyframes
    ============================================================ */
 
@@ -1058,6 +1145,82 @@ select {
 .text-3 { color: var(--text-3); }
 .small { font-size: 12px; }
 .mono { font-family: "SFMono-Regular", Consolas, monospace; font-size: 12.5px; }
+
+/* ============================================================
+   Dinamismo: spotlight, live badge, reloj del dashboard
+   ============================================================ */
+
+/* Franja superior del dashboard: estado "en vivo" + reloj */
+.dash-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* Badge "en vivo" con pulso de anillo. Es un *estado* continuo
+   (no entrada/salida), por eso usa keyframes simples. */
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-2);
+}
+
+.live .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 0 var(--success-soft);
+  animation: live-pulse 2.2s var(--ease-out) infinite;
+}
+
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--success-soft); }
+  70%  { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Spotlight: brillo radial que sigue al cursor sobre la card.
+   Activo solo en dispositivos con pointer fino. */
+.card.spotlight { position: relative; }
+
+.card.spotlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(460px circle at var(--mx, 50%) var(--my, 50%), rgba(99, 102, 241, 0.09), transparent 62%);
+  opacity: 0;
+  transition: opacity var(--dur-standard) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card.spotlight:hover::after { opacity: 1; }
+}
+
+/* Valor sobre las barras del chart: aparece en escalera tras la barra */
+.chart-val {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  animation: fade-in 320ms var(--ease-out) forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
 /* ============================================================
    Responsive

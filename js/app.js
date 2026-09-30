@@ -117,7 +117,7 @@ async function navigate(view, opts = {}) {
     actions.appendChild(b);
   }
 
-  $("#view").innerHTML = spinnerHtml();
+  $("#view").innerHTML = skeletonHtml();
   try {
     await def.render();
   } catch (err) {
@@ -175,6 +175,23 @@ function modalConfigApi() {
    5. Dashboard
    ================================================================== */
 
+/* Card de KPI con count-up: si k.value es numérico se anima desde 0
+   (data-valor) usando animarValores() tras el render. */
+function kpiCardHtml(k, i) {
+  const esNum = k.value != null && Number.isFinite(Number(k.value));
+  const attrs = esNum
+    ? ` data-valor="${Number(k.value)}" data-decimals="${k.decimals ?? 0}" data-prefix="${k.prefix || ""}" data-suffix="${k.suffix || ""}"`
+    : "";
+  const valor = esNum ? "0" : escapeHtml(k.texto ?? (k.value == null ? "—" : String(k.value)));
+  return `<div class="kpi stagger" style="--i:${i}">
+      <div class="kpi-icon ${k.cls}">${k.icon}</div>
+      <div>
+        <div class="kpi-value"${attrs}>${valor}</div>
+        <div class="kpi-label">${k.label}</div>
+      </div>
+    </div>`;
+}
+
 async function renderDashboard() {
   const [vehicles, drivers, shipments] = await conTiempo(
     Promise.all([listVehiculos(), listConductores(), listarEnvios()])
@@ -195,30 +212,20 @@ async function renderDashboard() {
     { icon: "🛻", cls: "slate", value: state.vehicles.length, label: "Vehículos" },
   ];
 
-  const kpiHtml = kpis
-    .map(
-      (k, i) => `<div class="kpi stagger" style="--i:${i}">
-          <div class="kpi-icon ${k.cls}">${k.icon}</div>
-          <div>
-            <div class="kpi-value">${fmtNum(k.value)}</div>
-            <div class="kpi-label">${k.label}</div>
-          </div>
-        </div>`
-    )
-    .join("");
+  const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
 
   const orden = ["pendiente", "en_transito", "con_incidencia", "devuelto", "entregado"];
   const colores = { neutral: "#94a3b8", info: "#0284c7", warn: "#d97706", danger: "#dc2626", success: "#16a34a" };
   const barras = orden
     .filter((e) => ENVIO_ESTADOS[e])
-    .map((e) => {
+    .map((e, i) => {
       const n = cuenta(e);
       const pct = total ? Math.round((n / total) * 100) : 0;
       const info = ENVIO_ESTADOS[e];
       return `
-        <div class="estado-bar">
+        <div class="estado-bar stagger" style="--i:${i}">
           <div class="row"><span class="lbl">${info.label}</span><span><strong>${n}</strong> · ${pct}%</span></div>
-          <div class="track"><div class="fill" style="background:${colores[info.cls]}"></div></div>
+          <div class="track"><div class="fill" style="background:${colores[info.cls]};animation-delay:${140 + i * 90}ms"></div></div>
         </div>`;
     })
     .join("");
@@ -263,13 +270,17 @@ async function renderDashboard() {
     : emptyState("📭", "Todavía no hay envíos. Creá el primero desde la pestaña Envíos.");
 
   $("#view").innerHTML = `
+    <div class="dash-meta">
+      <span class="live"><span class="dot"></span>Panel en vivo</span>
+      <span class="chip" id="dashboard-updated">Actualizado —</span>
+    </div>
     <div class="kpis">${kpiHtml}</div>
     <div class="grid-2">
-      <div class="card stagger" style="--i:6">
+      <div class="card spotlight stagger" style="--i:6">
         <div class="card-header"><div><h2>Envíos por estado</h2><div class="sub">Distribución actual de la flota de envíos</div></div></div>
         <div class="card-body">${total ? `<div class="estado-bars">${barras}</div>` : emptyState("📊", "Sin datos aún.")}</div>
       </div>
-      <div class="card stagger" style="--i:7">
+      <div class="card spotlight stagger" style="--i:7">
         <div class="card-header">
           <div><h2>Últimos envíos</h2><div class="sub">Clic para ver el detalle</div></div>
           <button type="button" class="btn btn-ghost small" data-action="go-envios">Ver todos</button>
@@ -277,10 +288,12 @@ async function renderDashboard() {
         <div class="card-body" style="padding:0">${tablaHtml}</div>
       </div>
     </div>
-    <div class="card stagger" style="--i:8">
+    <div class="card spotlight stagger" style="--i:8">
       <div class="card-header"><div><h2>Actividad reciente</h2><div class="sub">Últimos eventos consolidados por Analytics</div></div></div>
       <div class="card-body">${actividadHtml}</div>
     </div>`;
+
+  animarValores();
 }
 
 /* ==================================================================
@@ -1014,14 +1027,24 @@ async function renderTelemetria() {
       const lecturas = (await listarTelemetria(vehiculoSeleccionado, 40)) || [];
       if (lecturas.length) {
         const ultima = lecturas[0];
-        const gauges = [
-          { label: "Velocidad", value: ultima.velocidad_kmh != null ? `${fmtNum2(ultima.velocidad_kmh)} km/h` : "—" },
-          { label: "Combustible", value: ultima.nivel_combustible_pct != null ? fmtPct(ultima.nivel_combustible_pct) : "—" },
-          { label: "Temp. motor", value: ultima.temperatura_motor_c != null ? `${fmtNum2(ultima.temperatura_motor_c)} °C` : "—" },
-          { label: "Temp. carga", value: ultima.temperatura_carga_c != null ? `${fmtNum2(ultima.temperatura_carga_c)} °C` : "—" },
-          { label: "Kilometraje", value: ultima.kilometraje_acumulado_km != null ? `${fmtNum2(ultima.kilometraje_acumulado_km)} km` : "—" },
-          { label: "Horas motor", value: ultima.horas_motor != null ? fmtNum2(ultima.horas_motor) : "—" },
+        // Gauges radiales: pct se calcula contra un rango razonable por métrica
+        const gGauge = [
+          { label: "Velocidad", val: ultima.velocidad_kmh, max: 120, prefix: "", suffix: " km/h", decimals: 1, color: "#4f46e5" },
+          { label: "Combustible", val: ultima.nivel_combustible_pct, max: 100, prefix: "", suffix: "%", decimals: 1, color: "#16a34a" },
+          { label: "Temp. motor", val: ultima.temperatura_motor_c, max: 120, prefix: "", suffix: " °C", decimals: 1, color: "#d97706" },
+          { label: "Temp. carga", val: ultima.temperatura_carga_c, max: 40, prefix: "", suffix: " °C", decimals: 1, color: "#0284c7" },
+          { label: "Kilometraje", val: ultima.kilometraje_acumulado_km, max: 200000, prefix: "", suffix: " km", decimals: 1, color: "#7c3aed" },
+          { label: "Horas motor", val: ultima.horas_motor, max: 10000, prefix: "", suffix: " h", decimals: 1, color: "#475569" },
         ];
+        const gaugesHtml = gGauge
+          .map((g) =>
+            gaugeDonut({
+              valor: g.val != null && g.val !== "" ? Number(g.val) : null,
+              pct: g.val != null && g.val !== "" ? (Number(g.val) / g.max) * 100 : 0,
+              label: g.label, prefix: g.prefix, suffix: g.suffix, decimals: g.decimals, color: g.color,
+            })
+          )
+          .join("");
         const kpiHtml = ultima.codigo_obd2
           ? `<div class="chip" style="background:var(--danger-soft);color:var(--danger)">⚠️ OBD2: ${escapeHtml(ultima.codigo_obd2)}</div>`
           : `<div class="chip" style="background:var(--success-soft);color:var(--success)">✓ Sin códigos OBD2</div>`;
@@ -1038,14 +1061,13 @@ async function renderTelemetria() {
           </tr>`);
 
         contenido = `
-          <div class="grid-4 mt-16">
-            ${gauges.map((g, i) => `<div class="gauge stagger" style="--i:${i}"><span class="gauge-label">${g.label}</span><span class="gauge-value">${g.value}</span></div>`).join("")}
-          </div>
+          <div class="grid-4 mt-16">${gaugesHtml}</div>
           <div class="mt-16" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             ${kpiHtml}
             <span class="chip">Última lectura: ${fmtFechaHora(ultima.tiempo)}</span>
+            <span class="live"><span class="dot"></span>En vivo</span>
           </div>
-          <div class="card mt-16">
+          <div class="card spotlight mt-16">
             <div class="card-header"><div><h2>Historial de lecturas (${lecturas.length})</h2></div></div>
             ${tablaSimple(["Tiempo", "Lat, Lng", "Vel. km/h", "Combustible", "Motor °C", "Carga °C", "Estado"], rows, { emptyEmoji: "⌖" })}
           </div>`;
@@ -1060,6 +1082,9 @@ async function renderTelemetria() {
   $("#view").innerHTML = `
     <div class="card">${selector}</div>
     ${contenido}`;
+
+  animarGauges();
+  animarValores();
 }
 
 function modalNuevaLectura() {
@@ -1383,14 +1408,7 @@ async function renderFacturacion() {
     { icon: "📏", cls: "blue", value: (costos || []).length, label: "Costos de ruta" },
   ];
 
-  const kpiHtml = kpis
-    .map(
-      (k, i) => `<div class="kpi stagger" style="--i:${i}">
-          <div class="kpi-icon ${k.cls}">${k.icon}</div>
-          <div><div class="kpi-value">${fmtNum(k.value)}</div><div class="kpi-label">${k.label}</div></div>
-        </div>`
-    )
-    .join("");
+  const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
 
   const factRows = (facturas || []).map((f, i) => `
     <tr class="stagger" style="--i:${i}">
@@ -1415,17 +1433,19 @@ async function renderFacturacion() {
 
   $("#view").innerHTML = `
     <div class="kpis">${kpiHtml}</div>
-    <div class="card">
+    <div class="card spotlight">
       <div class="card-header">
         <div><h2>Facturas (${(facturas || []).length})</h2><div class="sub">Período, monto y estado</div></div>
         <button type="button" class="btn btn-primary" data-action="cerrar-periodo">🔒 Cerrar período</button>
       </div>
       ${tablaSimple(["ID", "Cliente", "Período", "Monto", "Estado", "Emitida"], factRows, { emptyEmoji: "🧾", emptyText: "Sin facturas. Usá «Cerrar período» para generarlas." })}
     </div>
-    <div class="card">
+    <div class="card spotlight">
       <div class="card-header"><div><h2>Costos de ruta (${(costos || []).length})</h2><div class="sub">Detalle de costos por ruta</div></div></div>
       ${tablaSimple(["Ruta", "Envío", "Distancia", "Combustible", "Peajes", "Total", "Fecha"], costoRows, { emptyEmoji: "📏", emptyText: "Sin costos calculados." })}
     </div>`;
+
+  animarValores();
 }
 
 function modalTarifa() {
@@ -1578,22 +1598,15 @@ async function renderAnalitica() {
   try { resumen = await analyticsResumen(); } catch (_err) { resumen = null; }
 
   const kpis = [
-    { icon: "🛻", cls: "indigo", value: resumen ? resumen.total_vehiculos : "—", label: "Vehículos" },
-    { icon: "🧑‍✈️", cls: "green", value: resumen ? resumen.total_conductores : "—", label: "Conductores" },
-    { icon: "🚚", cls: "blue", value: resumen ? resumen.envios_en_transito : "—", label: "En tránsito" },
-    { icon: "✅", cls: "green", value: resumen ? resumen.envios_entregados_historico : "—", label: "Entregados" },
-    { icon: "⚠️", cls: "red", value: resumen ? resumen.envios_con_incidencia_historico : "—", label: "Con incidencia" },
-    { icon: "🎯", cls: "amber", value: resumen ? fmtPct(resumen.tasa_cumplimiento_sla_global_pct) : "—", label: "Cumplimiento SLA" },
+    { icon: "🛻", cls: "indigo", value: resumen ? resumen.total_vehiculos : null, label: "Vehículos" },
+    { icon: "🧑‍✈️", cls: "green", value: resumen ? resumen.total_conductores : null, label: "Conductores" },
+    { icon: "🚚", cls: "blue", value: resumen ? resumen.envios_en_transito : null, label: "En tránsito" },
+    { icon: "✅", cls: "green", value: resumen ? resumen.envios_entregados_historico : null, label: "Entregados" },
+    { icon: "⚠️", cls: "red", value: resumen ? resumen.envios_con_incidencia_historico : null, label: "Con incidencia" },
+    { icon: "🎯", cls: "amber", value: resumen ? resumen.tasa_cumplimiento_sla_global_pct : null, decimals: 1, suffix: "%", label: "Cumplimiento SLA" },
   ];
 
-  const kpiHtml = kpis
-    .map(
-      (k, i) => `<div class="kpi stagger" style="--i:${i}">
-          <div class="kpi-icon ${k.cls}">${k.icon}</div>
-          <div><div class="kpi-value">${escapeHtml(k.value)}</div><div class="kpi-label">${k.label}</div></div>
-        </div>`
-    )
-    .join("");
+  const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
 
   // Ejecutar consultas clave (tolera fallos por separado)
   const [entregas, utilizacion, costoKm, eficiencia, proyeccion] = await Promise.all([
@@ -1610,10 +1623,11 @@ async function renderAnalitica() {
     const max = Math.max(...entregas.map((e) => Number(e.total_entregados || 0)), 1);
     const maxMostrar = entregas.slice(-15);
     chartHtml = `<div class="chart-bars">${maxMostrar
-      .map((e) => {
+      .map((e, i) => {
         const h = Math.round((Number(e.total_entregados || 0) / max) * 100);
         return `<div class="chart-col" title="Fecha: ${escapeHtml(e.fecha)} — ${fmtNum(e.total_entregados)} entregados">
-          <div class="chart-bar" style="height:${Math.max(h, 4)}%"></div>
+          <div class="chart-val" style="animation-delay:${320 + i * 70}ms">${fmtNum(e.total_entregados)}</div>
+          <div class="chart-bar" style="height:${Math.max(h, 4)}%;animation-delay:${i * 70}ms"></div>
           <div class="chart-label">${escShortDate(e.fecha)}</div>
         </div>`;
       })
@@ -1691,27 +1705,29 @@ async function renderAnalitica() {
     ${resumen ? `<div class="mb-16"><span class="chip">Última actualización ETL: ${fmtFechaHora(resumen.ultima_actualizacion_etl)}</span></div>` : `<div class="mb-16"><span class="chip">Analytics sin resumen. Probá «▶ Ejecutar ETL».</span></div>`}
     <div class="kpis">${kpiHtml}</div>
     <div class="grid-2">
-      <div class="card">
+      <div class="card spotlight">
         <div class="card-header"><div><h2>Entregas diarias (30 días)</h2><div class="sub">Total entregadas por día</div></div></div>
         <div class="card-body">${chartHtml}</div>
       </div>
-      <div class="card">
+      <div class="card spotlight">
         <div class="card-header"><div><h2>Utilización de flota</h2><div class="sub">Estado actual por vehículo</div></div></div>
         <div class="card-body">${utilizacionHtml}</div>
       </div>
-      <div class="card">
+      <div class="card spotlight">
         <div class="card-header"><div><h2>Costo por km</h2><div class="sub">Promedio según tipo de vehículo</div></div></div>
         <div class="card-body">${costoHtml}</div>
       </div>
-      <div class="card">
+      <div class="card spotlight">
         <div class="card-header"><div><h2>Eficiencia de combustible</h2><div class="sub">km por unidad de combustible consumida</div></div></div>
         <div class="card-body">${eficienciaHtml}</div>
       </div>
     </div>
-    <div class="card">
+    <div class="card spotlight">
       <div class="card-header"><div><h2>Proyección de mantenimiento (90 días)</h2><div class="sub">Vencimientos próximos por vehículo</div></div></div>
       <div class="card-body" style="padding:0">${proyeccionHtml}</div>
     </div>`;
+
+  animarValores();
 }
 
 function escShortDate(fecha) {
@@ -1977,3 +1993,23 @@ $("#btn-config-api").addEventListener("click", modalConfigApi);
   checkHealth();
   navigate("dashboard").catch(console.error);
 })();
+
+/* ==================================================================
+   Comportamientos globales de dinamismo
+   ================================================================== */
+
+// Reloj "actualizado" en el dashboard (solo actualiza si el elemento vive)
+setInterval(() => {
+  const el = $("#dashboard-updated");
+  if (el) el.textContent = "Actualizado " + new Date().toLocaleTimeString("es-AR", { hour12: false });
+}, 1000);
+
+// Spotlight en cards: un brillo radial que sigue al cursor (solo pointer fino)
+document.addEventListener("pointermove", (e) => {
+  if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const card = e.target.closest(".card.spotlight");
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  card.style.setProperty("--mx", ((e.clientX - r.left) / r.width) * 100 + "%");
+  card.style.setProperty("--my", ((e.clientY - r.top) / r.height) * 100 + "%");
+});
