@@ -299,8 +299,7 @@ async function renderVehiculos() {
         <td>${v.capacidad_refrigeracion ? "❄️ Sí" : "No"}</td>
         <td>${v.certificado_hazmat ? "⚠️ Sí" : "No"}</td>
         <td><button class="btn btn-ghost small" data-action="change-vehiculo-estado" data-id="${escapeHtml(v.id)}" data-estado="${escapeHtml(v.estado)}">Estado</button></td>
-      </tr>`)
-    .join("");
+      </tr>`);
 
   $("#view").innerHTML = `
     <div class="card">
@@ -434,8 +433,7 @@ async function renderConductores() {
         <td>${c.vehiculo_id ? (vehiculoPorId.get(c.vehiculo_id) ? escapeHtml(vehiculoPorId.get(c.vehiculo_id).placa) : shortId(c.vehiculo_id)) : "—"}</td>
         <td class="number">${fmtNum(c.horas_semanales)} h</td>
         <td>${estadoBadge(CONDUCTOR_ESTADOS, c.estado)}</td>
-      </tr>`)
-    .join("");
+      </tr>`);
 
   $("#view").innerHTML = `
     <div class="card">

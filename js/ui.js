@@ -135,10 +135,12 @@ function emptyState(emoji, text) {
 /* ---------- Helpers de tablas ---------- */
 
 function tablaSimple(columnas, filas, { emptyEmoji = "📭", emptyText = "No hay datos." } = {}) {
-  if (!filas || !filas.length) return emptyState(emptyEmoji, emptyText);
+  // `filas` puede llegar como array de <tr> o como string ya unido; toleramos ambos.
+  const cuerpo = Array.isArray(filas) ? filas.join("") : String(filas ?? "");
+  if (!cuerpo) return emptyState(emptyEmoji, emptyText);
   return `<div class="table-wrap"><table>
     <thead><tr>${columnas.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
-    <tbody>${filas.join("")}</tbody>
+    <tbody>${cuerpo}</tbody>
   </table></div>`;
 }
 
