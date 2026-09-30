@@ -92,6 +92,7 @@ function dismissToast(el) {
 
 function openModal({ title, body, footer }) {
   const root = $("#modal-root");
+  const prevFocus = document.activeElement;
   root.innerHTML = `
     <div class="modal-overlay" id="modal-overlay" data-mounted="false">
       <div class="modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
@@ -111,14 +112,18 @@ function openModal({ title, body, footer }) {
   requestAnimationFrame(() => requestAnimationFrame(() => overlay.setAttribute("data-mounted", "true")));
   const firstField = root.querySelector("input, select, textarea");
   if (firstField) setTimeout(() => firstField.focus(), 70);
+  // Guardamos el foco previo para devolverlo al cerrar (a11y)
+  root._prevFocus = prevFocus && prevFocus.focus ? prevFocus : null;
 }
 
 function closeModal() {
   const overlay = $("#modal-overlay");
   if (!overlay) return;
+  const root = $("#modal-root");
   overlay.setAttribute("data-mounted", "false");
   setTimeout(() => {
-    $("#modal-root").innerHTML = "";
+    root.innerHTML = "";
+    if (root._prevFocus) root._prevFocus.focus();
   }, 200);
 }
 

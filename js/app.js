@@ -125,6 +125,16 @@ async function navigate(view, opts = {}) {
     if (!(err instanceof ApiError)) console.error(err);
   }
   closeSidebarMobile();
+  viewEnter();
+}
+
+/* Reinicia la animación de entrada de la vista (transición, no keyframe
+   de ida y vuelta): elimina la clase, fuerza reflow y la vuelve a poner. */
+function viewEnter() {
+  const v = $("#view");
+  v.classList.remove("view-anim");
+  void v.offsetWidth;
+  v.classList.add("view-anim");
 }
 
 /* ==================================================================
@@ -1923,11 +1933,32 @@ $$(".nav-item").forEach((item) => {
 
 // Sidebar
 $("#btn-toggle-sidebar").addEventListener("click", () => {
-  $("#sidebar").classList.toggle("open");
+  const sb = $("#sidebar");
+  const isOpen = sb.classList.toggle("open");
+  // Backdrop del drawer en móvil (creado con transición de opacidad)
+  if (isOpen && window.innerWidth <= 900) {
+    const bd = document.createElement("div");
+    bd.className = "sidebar-backdrop";
+    bd.setAttribute("aria-hidden", "true");
+    document.body.appendChild(bd);
+    requestAnimationFrame(() => requestAnimationFrame(() => (bd.style.opacity = "1")));
+  } else {
+    const bd = document.querySelector(".sidebar-backdrop");
+    if (bd) bd.remove();
+  }
 });
 function closeSidebarMobile() {
-  if (window.innerWidth <= 860) $("#sidebar").classList.remove("open");
+  if (window.innerWidth <= 900) {
+    $("#sidebar").classList.remove("open");
+    const bd = document.querySelector(".sidebar-backdrop");
+    if (bd) bd.remove();
+  }
 }
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains("sidebar-backdrop")) {
+    closeSidebarMobile();
+  }
+});
 
 $("#btn-config-api").addEventListener("click", modalConfigApi);
 
