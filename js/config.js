@@ -19,6 +19,13 @@ const CONFIG = {
     const fromUrl = qParams.get("api");
     if (fromUrl) {
       CONFIG.API_BASE_URL = fromUrl.replace(/\/+$/, "");
+      // Persistir el parámetro: si abrís con ?api=..., queda guardado en
+      // localStorage y las próximas visitas ya usan esa URL sin repetirlo.
+      try {
+        localStorage.setItem("logitrack_api_url", CONFIG.API_BASE_URL);
+      } catch (_err) {
+        /* modo privado o storage bloqueado: se sigue igual */
+      }
       return;
     }
     const saved = localStorage.getItem("logitrack_api_url");
