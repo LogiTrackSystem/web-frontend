@@ -162,13 +162,48 @@ function modalConfigApi() {
         <div class="field full">
           <label for="cfg-api-url">URL del API Gateway</label>
           <input id="cfg-api-url" type="url" value="${escapeHtml(CONFIG.API_BASE_URL)}" placeholder="http://localhost:8002" />
-          <div class="hint">Ej.: http://localhost:8002 (local) o la IP de la máquina que corre el gateway.</div>
+          <div class="hint">Ej.: http://localhost:8002 (local) o la URL pública del túnel.</div>
+        </div>
+        <div class="field full">
+          <div id="cfg-diag" class="api-diag">
+            <div class="api-diag-row"><span>URL en uso</span><code id="cfg-diag-url">${escapeHtml(CONFIG.API_BASE_URL)}</code></div>
+            <div class="api-diag-row"><span>Estado</span><span id="cfg-diag-status">sin comprobar</span></div>
+            <div class="api-diag-row"><span>Latencia</span><span id="cfg-diag-lat">—</span></div>
+          </div>
+          <button type="button" class="btn btn-ghost small" data-action="test-api-config" style="margin-top:10px">🩺 Probar conexión</button>
         </div>
       </div>`,
     footer: `
       <button type="button" class="btn btn-ghost" data-action="close-modal">Cancelar</button>
       <button type="button" class="btn btn-primary" data-action="save-api-config">Guardar</button>`,
   });
+}
+
+// Prueba la URL del input contra /health y muestra estado + latencia.
+async function testApiConfig() {
+  const input = $("#cfg-api-url");
+  const url = (input ? input.value : CONFIG.API_BASE_URL).trim().replace(/\/+$/, "");
+  const statusEl = $("#cfg-diag-status");
+  const latEl = $("#cfg-diag-lat");
+  const urlEl = $("#cfg-diag-url");
+  if (urlEl) urlEl.textContent = url;
+  if (statusEl) { statusEl.textContent = "comprobando…"; statusEl.className = ""; }
+  if (latEl) latEl.textContent = "—";
+  const t0 = performance.now();
+  try {
+    const res = await fetch(`${url}/health`, { cache: "no-store" });
+    const ms = Math.round(performance.now() - t0);
+    if (res.ok) {
+      if (statusEl) { statusEl.textContent = "🟢 responde"; statusEl.className = "ok"; }
+      if (latEl) latEl.textContent = `${ms} ms`;
+    } else {
+      if (statusEl) { statusEl.textContent = `🔴 HTTP ${res.status}`; statusEl.className = "err"; }
+      if (latEl) latEl.textContent = `${ms} ms`;
+    }
+  } catch (err) {
+    if (statusEl) { statusEl.textContent = "🔴 no conecta"; statusEl.className = "err"; }
+    if (latEl) latEl.textContent = "—";
+  }
 }
 
 /* ==================================================================
@@ -1748,6 +1783,11 @@ async function onAction(action, el) {
     case "close-modal":
       closeModal();
       break;
+
+    case "test-api-config": {
+      await testApiConfig();
+      break;
+    }
 
     case "save-api-config": {
       const url = $("#cfg-api-url").value.trim().replace(/\/+$/, "");
