@@ -133,6 +133,11 @@ function spinnerHtml() {
   return `<div class="spinner" role="status" aria-label="Cargando"></div>`;
 }
 
+/** Spinner inline para botones/acciones */
+function spinnerSmallHtml() {
+  return `<span class="btn-spinner" aria-hidden="true"></span>`;
+}
+
 function emptyState(emoji, text) {
   return `<div class="state-box"><span class="emoji">${emoji}</span>${escapeHtml(text)}</div>`;
 }
@@ -254,4 +259,21 @@ function animarGauges(root = document) {
       circle.style.strokeDashoffset = c * (1 - pct / 100);
     }));
   });
+}
+
+/** Muestra spinner dentro de un botón (data-loading) y deshabilita el botón. */
+function setButtonLoading(btn, loading) {
+  if (!btn) return;
+  if (loading) {
+    if (!btn.dataset._origHtml) btn.dataset._origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `${spinnerSmallHtml()} ${btn.dataset._loadingText || "Procesando..."}`;
+  } else {
+    btn.disabled = false;
+    if (btn.dataset._origHtml) {
+      btn.innerHTML = btn.dataset._origHtml;
+      delete btn.dataset._origHtml;
+    }
+    delete btn.dataset._loadingText;
+  }
 }
