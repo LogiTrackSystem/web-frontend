@@ -1712,3 +1712,208 @@ select {
   .nav-item { background-color: rgba(255, 255, 255, 0.06); }
   .nav-item.active { background-color: rgba(79, 70, 229, 0.55); background-image: none; }
 }
+
+/* ============================================================
+   Refresh visual v2 (UI/UX)
+   - Tokens afinados (radios, sombras)
+   - Iconos vectoriales Lucide
+   - Header con icono de vista
+   - Tarjetas KPI rediseñadas
+   - Barras de estado (ancho real + etiquetas alineadas)
+   - Detalles de tarjetas, chips, timeline y responsive
+   ============================================================ */
+
+:root {
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(23, 24, 41, 0.04), 0 6px 18px rgba(23, 24, 41, 0.06);
+  --shadow-md: 0 2px 6px rgba(23, 24, 41, 0.06), 0 16px 38px rgba(23, 24, 41, 0.12);
+  --shadow-lg: 0 10px 24px rgba(23, 24, 41, 0.1), 0 32px 64px rgba(23, 24, 41, 0.18);
+}
+
+/* ---------- Iconos Lucide ---------- */
+.lucide-ic { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+.btn svg { width: 16px; height: 16px; }
+.btn.small svg { width: 14px; height: 14px; }
+.ghost-btn svg { width: 16px; height: 16px; }
+.chip svg { width: 13px; height: 13px; color: var(--text-3); }
+
+.nav-icon { width: 20px; height: 20px; }
+.nav-icon svg { width: 18px; height: 18px; stroke-width: 1.9; }
+
+/* ---------- Header (topbar) ---------- */
+.topbar { padding: 14px 32px; gap: 14px; }
+
+.topbar-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.4) 100%),
+    var(--primary-soft);
+  border: 1px solid rgba(79, 70, 229, 0.16);
+  box-shadow: 0 1px 2px rgba(23, 24, 41, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.topbar-icon svg { width: 20px; height: 20px; }
+
+.topbar-title h1 { font-size: 19px; font-weight: 760; }
+.topbar-title p { font-size: 12.5px; }
+
+/* ---------- Tarjetas KPI rediseñadas ---------- */
+.kpis {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+}
+
+.kpi {
+  position: relative;
+  isolation: isolate;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.kpi-head { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 14px; }
+
+.kpi-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft, var(--primary-soft));
+  color: var(--accent, var(--primary));
+  box-shadow: inset 0 0 0 1px rgba(23, 24, 41, 0.04);
+  transition: transform var(--dur-standard) var(--ease-out);
+}
+.kpi-icon svg { width: 21px; height: 21px; stroke-width: 2; }
+
+/* Halo de acento muy tenue en la esquina */
+.kpi::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(130% 120% at 100% 0%, var(--accent-soft, var(--primary-soft)), transparent 58%);
+  opacity: 0.75;
+}
+
+.kpi-value {
+  font-size: 31px;
+  font-weight: 770;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-label { margin-top: 7px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+
+.kpi-indigo { --accent: var(--primary); --accent-soft: var(--primary-soft); }
+.kpi-green  { --accent: var(--success); --accent-soft: var(--success-soft); }
+.kpi-amber  { --accent: var(--warn);    --accent-soft: var(--warn-soft); }
+.kpi-red    { --accent: var(--danger);  --accent-soft: var(--danger-soft); }
+.kpi-blue   { --accent: var(--info);    --accent-soft: var(--info-soft); }
+.kpi-slate  { --accent: var(--slate);   --accent-soft: var(--slate-soft); }
+
+/* El icono hereda el acento de la tarjeta (gana a .kpi-icon.indigo, etc.) */
+.kpi .kpi-icon { background: var(--accent-soft); color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .kpi:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .kpi:hover .kpi-icon { transform: scale(1.06); }
+}
+
+/* ---------- Barras de "Envíos por estado" ---------- */
+.estado-bars { gap: 16px; }
+
+.eb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.eb-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.eb-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--c, var(--slate));
+  box-shadow: 0 0 0 3px rgba(23, 24, 41, 0.05);
+}
+
+.eb-val {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.eb-val strong { font-size: 14px; font-weight: 700; color: var(--text); }
+.eb-pct { min-width: 46px; text-align: right; font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+
+.track { height: 9px; background: var(--surface-3); }
+
+.estado-bar .fill {
+  background: var(--c, var(--slate));
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ---------- Cards, chips y estados vacíos ---------- */
+.card-header { padding: 18px 20px 14px; }
+.card-header h2 { font-size: 15.5px; }
+
+.state-box .emoji { color: var(--text-3); }
+.state-box .emoji svg { width: 26px; height: 26px; stroke-width: 1.8; }
+
+/* ---------- Línea de tiempo (detalle de envío) ---------- */
+.tl-item::before { display: none; }
+
+.tl-node {
+  position: absolute;
+  left: -23px;
+  top: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-softer);
+}
+.tl-node svg { width: 9px; height: 9px; stroke-width: 2.6; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 620px) {
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .kpi { padding: 15px; }
+  .kpi-value { font-size: 26px; }
+  .kpi-icon { width: 40px; height: 40px; }
+  .topbar-icon { display: none; }
+  .topbar-title h1 { font-size: 17px; }
+}

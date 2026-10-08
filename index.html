@@ -41,45 +41,45 @@
       <nav class="nav" id="nav">
         <span class="nav-label">General</span>
         <button class="nav-item" data-nav="dashboard">
-          <span class="nav-icon">◈</span> Dashboard
+          <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span> Dashboard
         </button>
 
         <span class="nav-label">Flota</span>
         <button class="nav-item" data-nav="vehiculos">
-          <span class="nav-icon">▣</span> Vehículos
+          <span class="nav-icon"><i data-lucide="truck"></i></span> Vehículos
         </button>
         <button class="nav-item" data-nav="conductores">
-          <span class="nav-icon">◇</span> Conductores
+          <span class="nav-icon"><i data-lucide="users"></i></span> Conductores
         </button>
         <button class="nav-item" data-nav="telemetria">
-          <span class="nav-icon">⌖</span> Telemetría
+          <span class="nav-icon"><i data-lucide="activity"></i></span> Telemetría
         </button>
         <button class="nav-item" data-nav="mantenimiento">
-          <span class="nav-icon">✦</span> Mantenimiento
+          <span class="nav-icon"><i data-lucide="wrench"></i></span> Mantenimiento
         </button>
 
         <span class="nav-label">Operaciones</span>
         <button class="nav-item" data-nav="envios">
-          <span class="nav-icon">▤</span> Envíos
+          <span class="nav-icon"><i data-lucide="package"></i></span> Envíos
         </button>
         <button class="nav-item" data-nav="rutas">
-          <span class="nav-icon">⤳</span> Rutas
+          <span class="nav-icon"><i data-lucide="route"></i></span> Rutas
         </button>
         <button class="nav-item" data-nav="aduana">
-          <span class="nav-icon">⛭</span> Aduana
+          <span class="nav-icon"><i data-lucide="stamp"></i></span> Aduana
         </button>
 
         <span class="nav-label">Negocio</span>
         <button class="nav-item" data-nav="facturacion">
-          <span class="nav-icon">◫</span> Facturación
+          <span class="nav-icon"><i data-lucide="receipt"></i></span> Facturación
         </button>
         <button class="nav-item" data-nav="notificaciones">
-          <span class="nav-icon">❏</span> Notificaciones
+          <span class="nav-icon"><i data-lucide="bell"></i></span> Notificaciones
         </button>
 
         <span class="nav-label">Inteligencia</span>
         <button class="nav-item" data-nav="analitica">
-          <span class="nav-icon">◧</span> Analítica
+          <span class="nav-icon"><i data-lucide="bar-chart-3"></i></span> Analítica
         </button>
       </nav>
 
@@ -89,7 +89,7 @@
           <span id="api-status-text">Verificando API…</span>
         </div>
         <button class="ghost-btn small" id="btn-config-api" type="button">
-          <span class="nav-icon">⚙</span> Configurar API
+          <span class="nav-icon"><i data-lucide="settings"></i></span> Configurar API
         </button>
       </div>
     </aside>
@@ -97,10 +97,13 @@
     <!-- ===== Main ===== -->
     <main class="main">
       <header class="topbar">
-        <button class="ghost-btn icon-btn" id="btn-toggle-sidebar" type="button" aria-label="Menú">☰</button>
-        <div class="topbar-title">
-          <h1 id="view-title">Dashboard</h1>
-          <p id="view-subtitle">Resumen del sistema LogiTrack</p>
+        <button class="ghost-btn icon-btn" id="btn-toggle-sidebar" type="button" aria-label="Menú"><i data-lucide="menu"></i></button>
+        <div class="topbar-heading">
+          <span class="topbar-icon" id="topbar-icon" aria-hidden="true"></span>
+          <div class="topbar-title">
+            <h1 id="view-title">Dashboard</h1>
+            <p id="view-subtitle">Resumen del sistema LogiTrack</p>
+          </div>
         </div>
         <div class="topbar-actions" id="topbar-actions"></div>
       </header>
@@ -116,6 +119,7 @@
   <div id="toasts" aria-live="polite"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/ui.js"></script>

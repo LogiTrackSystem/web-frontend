@@ -54,6 +54,83 @@ async function conTiempo(promise, ms = 350) {
   return result;
 }
 
+/* ---------- Iconos (Lucide) ----------
+   Se usa un helper `icon(nombre)` que emite <i data-lucide="...">. Lucide
+   sustituye esos nodos por SVG. Para no tocar decenas de llamadas a
+   emptyState/otras que aun pasan emojis, se traduce el emoji al nombre de
+   icono correspondiente; si ya llega un nombre valido, se usa tal cual. */
+
+const ICONO_POR_EMOJI = {
+  "📭": "inbox",
+  "📦": "package",
+  "📊": "bar-chart-3",
+  "🧾": "receipt",
+  "📏": "ruler",
+  "⛽": "fuel",
+  "🔧": "wrench",
+  "🔩": "wrench",
+  "🛻": "truck",
+  "🚚": "truck",
+  "🚛": "truck",
+  "⏳": "clock",
+  "⌖": "crosshair",
+  "🗺️": "map",
+  "🗓": "calendar-days",
+  "🛰": "satellite",
+  "✦": "sparkles",
+  "◧": "bar-chart-3",
+  "◨": "bar-chart-3",
+  "◈": "layout-dashboard",
+  "▣": "truck",
+  "◇": "user",
+  "▤": "package",
+  "⤳": "route",
+  "◫": "receipt",
+  "❏": "bell",
+  "⛭": "settings",
+  "⚙": "settings",
+  "🔔": "bell",
+  "🎯": "target",
+  "✅": "circle-check",
+  "⚠": "alert-triangle",
+  "❄": "snowflake",
+  "🌎": "globe",
+  "🔄": "refresh-cw",
+  "↻": "rotate-cw",
+  "📸": "camera",
+  "🔒": "lock",
+  "🩺": "stethoscope",
+  "▶": "play",
+  "＋": "plus",
+  "✓": "check",
+  "🧑": "users",
+  "🏭": "factory",
+};
+
+function resolverIcono(x) {
+  if (!x) return "circle-dot";
+  if (ICONO_POR_EMOJI[x]) return ICONO_POR_EMOJI[x];
+  const bare = String(x).replace(/[\uFE0E\uFE0F\u200D]/g, "").trim();
+  if (ICONO_POR_EMOJI[bare]) return ICONO_POR_EMOJI[bare];
+  return /^[a-z0-9-]+$/.test(bare) ? bare : "circle-dot";
+}
+
+/** Devuelve el marcado de un icono Lucide. */
+function icon(nombre, cls = "") {
+  return `<i data-lucide="${resolverIcono(nombre)}" class="lucide-ic${cls ? " " + cls : ""}" aria-hidden="true"></i>`;
+}
+
+/** Convierte los <i data-lucide> pendientes del documento en SVG. */
+function refreshIcons() {
+  if (!window.lucide || typeof window.lucide.createIcons !== "function") return;
+  // Nada nuevo que convertir.
+  if (!document.querySelector("i[data-lucide]")) return;
+  // Lucide copia el atributo data-lucide al SVG resultante; lo quitamos de los
+  // SVG ya generados para no re-procesarlos en cada llamada.
+  document.querySelectorAll("svg[data-lucide]").forEach((s) => s.removeAttribute("data-lucide"));
+  try { window.lucide.createIcons(); } catch (_err) { /* sin CDN */ }
+}
+
 /* ---------- Badges ---------- */
 
 const badge = (label, cls = "neutral") =>
@@ -114,6 +191,7 @@ function openModal({ title, body, footer }) {
   if (firstField) setTimeout(() => firstField.focus(), 70);
   // Guardamos el foco previo para devolverlo al cerrar (a11y)
   root._prevFocus = prevFocus && prevFocus.focus ? prevFocus : null;
+  refreshIcons();
 }
 
 function closeModal() {
@@ -139,7 +217,7 @@ function spinnerSmallHtml() {
 }
 
 function emptyState(emoji, text) {
-  return `<div class="state-box"><span class="emoji">${emoji}</span>${escapeHtml(text)}</div>`;
+  return `<div class="state-box"><span class="emoji">${icon(emoji)}</span>${escapeHtml(text)}</div>`;
 }
 
 /* ---------- Helpers de tablas ---------- */
@@ -276,4 +354,31 @@ function setButtonLoading(btn, loading) {
     }
     delete btn.dataset._loadingText;
   }
+}
+
+/* Auto-render de iconos: cualquier <i data-lucide> que aparezca en el DOM
+   (vistas, modales, filas creadas por JS) se convierte en SVG. Se debounce
+   con requestAnimationFrame para agrupar ráfagas de cambios. */
+let _iconRaf = null;
+function _iconsProgramados() {
+  if (_iconRaf) return;
+  _iconRaf = requestAnimationFrame(() => { _iconRaf = null; refreshIcons(); });
+}
+if (typeof MutationObserver !== "undefined") {
+  const _iconObserver = new MutationObserver((muts) => {
+    for (const m of muts) {
+      for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        // Solo los marcadores <i> requieren conversion; los SVG ya generados
+        // no deben disparar el observer (evita bucles de re-render).
+        if (n.matches?.("i[data-lucide]") || n.querySelector?.("i[data-lucide]")) {
+          _iconsProgramados();
+          return;
+        }
+      }
+    }
+  });
+  const _arrancarObserver = () => _iconObserver.observe(document.body, { childList: true, subtree: true });
+  if (document.body) _arrancarObserver();
+  else document.addEventListener("DOMContentLoaded", _arrancarObserver, { once: true });
 }

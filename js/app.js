@@ -49,16 +49,30 @@ const RUTA_URGENCIA = {
 
 function etiquetaEvento(tipo) {
   const mapa = {
-    creado: "🆕 Envío creado",
-    asignado: "🚚 Vehículo asignado",
-    en_transito: "🚛 En tránsito",
-    con_incidencia: "⚠️ Incidencia registrada",
-    devuelto: "↩️ Envío devuelto",
-    entregado: "✅ Entregado",
-    retenido_aduana: "⛭ Retenido en aduana",
-    liberado_aduana: "✅ Liberado por aduana",
+    creado: "Envío creado",
+    asignado: "Vehículo asignado",
+    en_transito: "En tránsito",
+    con_incidencia: "Incidencia registrada",
+    devuelto: "Envío devuelto",
+    entregado: "Entregado",
+    retenido_aduana: "Retenido en aduana",
+    liberado_aduana: "Liberado por aduana",
   };
   return mapa[tipo] || tipo;
+}
+
+function iconoEvento(tipo) {
+  const mapa = {
+    creado: "file-plus",
+    asignado: "truck",
+    en_transito: "navigation",
+    con_incidencia: "alert-triangle",
+    devuelto: "undo-2",
+    entregado: "circle-check",
+    retenido_aduana: "stamp",
+    liberado_aduana: "shield-check",
+  };
+  return mapa[tipo] || "dot";
 }
 
 /* ==================================================================
@@ -94,17 +108,17 @@ setTimeout(ocultarLoading, 5000);
    ================================================================== */
 
 const VIEWS = {
-  dashboard: { title: "Dashboard", subtitle: "Resumen del sistema LogiTrack", render: renderDashboard, action: null },
-  vehiculos: { title: "Vehículos", subtitle: "Flota de LogiTrack", render: renderVehiculos, action: { label: "＋ Nuevo vehículo", fn: modalNuevoVehiculo } },
-  conductores: { title: "Conductores", subtitle: "Equipo de conducción", render: renderConductores, action: { label: "＋ Nuevo conductor", fn: modalNuevoConductor } },
-  telemetria: { title: "Telemetría", subtitle: "Lecturas en vivo por vehículo", render: renderTelemetria, action: { label: "＋ Registrar lectura", fn: modalNuevaLectura } },
-  mantenimiento: { title: "Mantenimiento", subtitle: "Programas e intervenciones", render: renderMantenimiento, action: { label: "＋ Agregar", fn: modalAgregarMantenimiento } },
-  envios: { title: "Envíos", subtitle: "Ciclo de vida de los envíos", render: renderEnvios, action: { label: "＋ Nuevo envío", fn: modalNuevoEnvio } },
-  rutas: { title: "Rutas", subtitle: "Planificación y recálculo de rutas", render: renderRutas, action: { label: "＋ Nueva ruta", fn: modalNuevaRuta } },
-  aduana: { title: "Aduana", subtitle: "Declaraciones aduaneras", render: renderAduana, action: null },
-  facturacion: { title: "Facturación", subtitle: "Facturas, tarifas y costos", render: renderFacturacion, action: null },
-  notificaciones: { title: "Notificaciones", subtitle: "Mensajes y preferencias", render: renderNotificaciones, action: { label: "⚙ Preferencias", fn: modalPreferencias } },
-  analitica: { title: "Analítica", subtitle: "KPIs, ETL y proyecciones", render: renderAnalitica, action: { label: "▶ Ejecutar ETL", fn: runEtlManual } },
+  dashboard: { title: "Dashboard", subtitle: "Resumen del sistema LogiTrack", icon: "layout-dashboard", render: renderDashboard, action: null },
+  vehiculos: { title: "Vehículos", subtitle: "Flota de LogiTrack", icon: "truck", render: renderVehiculos, action: { label: "Nuevo vehículo", icon: "plus", fn: modalNuevoVehiculo } },
+  conductores: { title: "Conductores", subtitle: "Equipo de conducción", icon: "users", render: renderConductores, action: { label: "Nuevo conductor", icon: "plus", fn: modalNuevoConductor } },
+  telemetria: { title: "Telemetría", subtitle: "Lecturas en vivo por vehículo", icon: "activity", render: renderTelemetria, action: { label: "Registrar lectura", icon: "plus", fn: modalNuevaLectura } },
+  mantenimiento: { title: "Mantenimiento", subtitle: "Programas e intervenciones", icon: "wrench", render: renderMantenimiento, action: { label: "Agregar", icon: "plus", fn: modalAgregarMantenimiento } },
+  envios: { title: "Envíos", subtitle: "Ciclo de vida de los envíos", icon: "package", render: renderEnvios, action: { label: "Nuevo envío", icon: "plus", fn: modalNuevoEnvio } },
+  rutas: { title: "Rutas", subtitle: "Planificación y recálculo de rutas", icon: "route", render: renderRutas, action: { label: "Nueva ruta", icon: "plus", fn: modalNuevaRuta } },
+  aduana: { title: "Aduana", subtitle: "Declaraciones aduaneras", icon: "stamp", render: renderAduana, action: null },
+  facturacion: { title: "Facturación", subtitle: "Facturas, tarifas y costos", icon: "receipt", render: renderFacturacion, action: null },
+  notificaciones: { title: "Notificaciones", subtitle: "Mensajes y preferencias", icon: "bell", render: renderNotificaciones, action: { label: "Preferencias", icon: "settings", fn: modalPreferencias } },
+  analitica: { title: "Analítica", subtitle: "KPIs, ETL y proyecciones", icon: "bar-chart-3", render: renderAnalitica, action: { label: "Ejecutar ETL", icon: "play", fn: runEtlManual } },
 };
 
 async function navigate(view, opts = {}) {
@@ -119,13 +133,15 @@ async function navigate(view, opts = {}) {
   const def = VIEWS[view];
   $("#view-title").textContent = def.title;
   $("#view-subtitle").textContent = def.subtitle;
+  const topIcon = $("#topbar-icon");
+  if (topIcon) topIcon.innerHTML = icon(def.icon || "layout-dashboard");
   const actions = $("#topbar-actions");
   actions.innerHTML = "";
   if (def.action) {
     const b = document.createElement("button");
     b.className = "btn btn-primary";
     b.type = "button";
-    b.textContent = def.action.label;
+    b.innerHTML = `${icon(def.action.icon || "plus")}<span>${escapeHtml(def.action.label)}</span>`;
     b.addEventListener("click", def.action.fn);
     actions.appendChild(b);
   }
@@ -147,6 +163,7 @@ async function navigate(view, opts = {}) {
   }
   closeSidebarMobile();
   viewEnter();
+  refreshIcons();
 }
 
 /* Reinicia la animación de entrada de la vista (transición, no keyframe
@@ -191,7 +208,7 @@ function modalConfigApi() {
             <div class="api-diag-row"><span>Estado</span><span id="cfg-diag-status">sin comprobar</span></div>
             <div class="api-diag-row"><span>Latencia</span><span id="cfg-diag-lat">—</span></div>
           </div>
-          <button type="button" class="btn btn-ghost small" data-action="test-api-config" style="margin-top:10px">🩺 Probar conexión</button>
+          <button type="button" class="btn btn-ghost small" data-action="test-api-config" style="margin-top:10px">${icon("stethoscope")} Probar conexión</button>
         </div>
       </div>`,
     footer: `
@@ -215,14 +232,14 @@ async function testApiConfig() {
     const res = await fetch(`${url}/health`, { cache: "no-store" });
     const ms = Math.round(performance.now() - t0);
     if (res.ok) {
-      if (statusEl) { statusEl.textContent = "🟢 responde"; statusEl.className = "ok"; }
+      if (statusEl) { statusEl.textContent = "responde"; statusEl.className = "ok"; }
       if (latEl) latEl.textContent = `${ms} ms`;
     } else {
-      if (statusEl) { statusEl.textContent = `🔴 HTTP ${res.status}`; statusEl.className = "err"; }
+      if (statusEl) { statusEl.textContent = `HTTP ${res.status}`; statusEl.className = "err"; }
       if (latEl) latEl.textContent = `${ms} ms`;
     }
   } catch (err) {
-    if (statusEl) { statusEl.textContent = "🔴 no conecta"; statusEl.className = "err"; }
+    if (statusEl) { statusEl.textContent = "no conecta"; statusEl.className = "err"; }
     if (latEl) latEl.textContent = "—";
   }
 }
@@ -239,12 +256,12 @@ function kpiCardHtml(k, i) {
     ? ` data-valor="${Number(k.value)}" data-decimals="${k.decimals ?? 0}" data-prefix="${k.prefix || ""}" data-suffix="${k.suffix || ""}"`
     : "";
   const valor = esNum ? "0" : escapeHtml(k.texto ?? (k.value == null ? "—" : String(k.value)));
-  return `<div class="kpi stagger" style="--i:${i}">
-      <div class="kpi-icon ${k.cls}">${k.icon}</div>
-      <div>
-        <div class="kpi-value"${attrs}>${valor}</div>
-        <div class="kpi-label">${k.label}</div>
+  return `<div class="kpi kpi-${k.cls} stagger" style="--i:${i}">
+      <div class="kpi-head">
+        <span class="kpi-icon ${k.cls}">${icon(k.icon)}</span>
       </div>
+      <div class="kpi-value"${attrs}>${valor}</div>
+      <div class="kpi-label">${escapeHtml(k.label)}</div>
     </div>`;
 }
 
@@ -260,28 +277,34 @@ async function renderDashboard() {
   const total = state.shipments.length;
 
   const kpis = [
-    { icon: "📦", cls: "indigo", value: total, label: "Envíos registrados" },
-    { icon: "⏳", cls: "amber", value: cuenta("pendiente"), label: "Pendientes" },
-    { icon: "🚚", cls: "blue", value: cuenta("en_transito"), label: "En tránsito" },
-    { icon: "⚠️", cls: "red", value: cuenta("con_incidencia"), label: "Con incidencia" },
-    { icon: "✅", cls: "green", value: cuenta("entregado"), label: "Entregados" },
-    { icon: "🛻", cls: "slate", value: state.vehicles.length, label: "Vehículos" },
+    { icon: "package", cls: "indigo", value: total, label: "Envíos registrados" },
+    { icon: "clock", cls: "amber", value: cuenta("pendiente"), label: "Pendientes" },
+    { icon: "truck", cls: "blue", value: cuenta("en_transito"), label: "En tránsito" },
+    { icon: "alert-triangle", cls: "red", value: cuenta("con_incidencia"), label: "Con incidencia" },
+    { icon: "circle-check", cls: "green", value: cuenta("entregado"), label: "Entregados" },
+    { icon: "car", cls: "slate", value: state.vehicles.length, label: "Vehículos" },
   ];
 
   const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
 
   const orden = ["pendiente", "en_transito", "con_incidencia", "devuelto", "entregado"];
-  const colores = { neutral: "#94a3b8", info: "#0284c7", warn: "#d97706", danger: "#dc2626", success: "#16a34a" };
+  const colores = { neutral: "#64748b", info: "#2563eb", warn: "#d97706", danger: "#dc2626", success: "#16a34a" };
   const barras = orden
     .filter((e) => ENVIO_ESTADOS[e])
     .map((e, i) => {
       const n = cuenta(e);
-      const pct = total ? Math.round((n / total) * 100) : 0;
+      const pct = total ? (n / total) * 100 : 0;
+      const pctLabel = `${pct.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`;
       const info = ENVIO_ESTADOS[e];
       return `
-        <div class="estado-bar stagger" style="--i:${i}">
-          <div class="row"><span class="lbl">${info.label}</span><span><strong>${n}</strong> · ${pct}%</span></div>
-          <div class="track"><div class="fill" style="background:${colores[info.cls]};animation-delay:${140 + i * 90}ms"></div></div>
+        <div class="estado-bar stagger" style="--i:${i};--c:${colores[info.cls]}">
+          <div class="eb-head">
+            <span class="eb-lbl"><span class="eb-dot"></span>${info.label}</span>
+            <span class="eb-val"><strong>${n}</strong><span class="eb-pct">${pctLabel}</span></span>
+          </div>
+          <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" aria-label="${info.label}">
+            <div class="fill" style="width:${pct}%;animation-delay:${140 + i * 90}ms"></div>
+          </div>
         </div>`;
     })
     .join("");
@@ -328,7 +351,7 @@ async function renderDashboard() {
   $("#view").innerHTML = `
     <div class="dash-meta">
       <span class="live"><span class="dot"></span>Panel en vivo</span>
-      <span class="chip" id="dashboard-updated">Actualizado —</span>
+      <span class="chip" id="dashboard-updated">${icon("refresh-cw")}<span class="chip-txt">Actualizando…</span></span>
     </div>
     <div class="kpis">${kpiHtml}</div>
     <div class="grid-2">
@@ -375,8 +398,8 @@ async function renderVehiculos() {
         <td>${v.anio ? escapeHtml(v.anio) : "—"}</td>
         <td>${fmtFecha(v.vencimiento_seguro)}</td>
         <td>${estadoBadge(VEHICULO_ESTADOS, v.estado)}</td>
-        <td>${v.capacidad_refrigeracion ? "❄️ Sí" : "No"}</td>
-        <td>${v.certificado_hazmat ? "⚠️ Sí" : "No"}</td>
+        <td>${v.capacidad_refrigeracion ? `${icon("snowflake")} Sí` : "No"}</td>
+        <td>${v.certificado_hazmat ? `${icon("alert-triangle")} Sí` : "No"}</td>
         <td><button class="btn btn-ghost small" data-action="change-vehiculo-estado" data-id="${escapeHtml(v.id)}" data-estado="${escapeHtml(v.estado)}">Estado</button></td>
       </tr>`);
 
@@ -384,7 +407,7 @@ async function renderVehiculos() {
     <div class="card">
       <div class="card-header">
         <div><h2>Flota (${state.vehicles.length})</h2><div class="sub">${state.vehicles.filter((v) => v.estado === "active").length} activos</div></div>
-        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
       </div>
       ${tablaSimple(
         ["Placa", "Tipo", "Capacidad", "Volumen", "Año", "Seguro vence", "Estado", "Refrig.", "Hazmat", ""],
@@ -421,8 +444,8 @@ function modalNuevoVehiculo() {
             </select></div>
           <div class="field"><label>Especificaciones</label>
             <div class="checkbox-group">
-              <label><input type="checkbox" name="capacidad_refrigeracion" /> ❄️ Refrigeración</label>
-              <label><input type="checkbox" name="certificado_hazmat" /> ⚠️ Hazmat</label>
+              <label><input type="checkbox" name="capacidad_refrigeracion" /> ${icon("snowflake")} Refrigeración</label>
+              <label><input type="checkbox" name="certificado_hazmat" /> ${icon("alert-triangle")} Hazmat</label>
             </div></div>
         </div>
       </form>`,
@@ -508,7 +531,7 @@ async function renderConductores() {
         <td><strong>${escapeHtml(c.nombre)}</strong></td>
         <td class="number">${escapeHtml(c.licencia_numero)}</td>
         <td>${escapeHtml(c.categorias_licencia || "—")}</td>
-        <td>${c.certificacion_hazmat ? "⚠️ Sí" : "No"}</td>
+        <td>${c.certificacion_hazmat ? `${icon("alert-triangle")} Sí` : "No"}</td>
         <td>${c.vehiculo_id ? (vehiculoPorId.get(c.vehiculo_id) ? escapeHtml(vehiculoPorId.get(c.vehiculo_id).placa) : shortId(c.vehiculo_id)) : "—"}</td>
         <td class="number">${fmtNum(c.horas_semanales)} h</td>
         <td>${estadoBadge(CONDUCTOR_ESTADOS, c.estado)}</td>
@@ -518,7 +541,7 @@ async function renderConductores() {
     <div class="card">
       <div class="card-header">
         <div><h2>Conductores (${state.drivers.length})</h2><div class="sub">${state.drivers.filter((c) => c.estado === "available").length} disponibles</div></div>
-        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
       </div>
       ${tablaSimple(["Nombre", "Licencia", "Categorías", "Hazmat", "Vehículo", "Horas/sem", "Estado"], rows, { emptyEmoji: "🧑‍✈️" })}
     </div>`;
@@ -554,7 +577,7 @@ function modalNuevoConductor() {
             </select></div>
           <div class="field"><label>Certificaciones</label>
             <div class="checkbox-group">
-              <label><input type="checkbox" name="certificacion_hazmat" /> ⚠️ Hazmat</label>
+              <label><input type="checkbox" name="certificacion_hazmat" /> ${icon("alert-triangle")} Hazmat</label>
             </div></div>
         </div>
       </form>`,
@@ -642,7 +665,7 @@ async function renderEnvios() {
     <div class="card">${filtrosHtml}
       <div class="card-header" style="border:none;padding-bottom:8px">
         <div><h2>Lista de envíos (${state.shipments.length})</h2></div>
-        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
       </div>
       <div style="padding:0">${tablaHtml}</div>
     </div>
@@ -667,6 +690,7 @@ async function detalleEnvioHtml() {
         .map(
           (ev) => `
         <div class="tl-item">
+          <span class="tl-node">${icon(iconoEvento(ev.tipo_evento))}</span>
           <div class="tl-title">${escapeHtml(etiquetaEvento(ev.tipo_evento))}</div>
           <div class="tl-date">${fmtFechaHora(ev.fecha_hora)}</div>
           ${ev.notas ? `<div class="tl-notes">${escapeHtml(ev.notas)}</div>` : ""}
@@ -692,7 +716,7 @@ async function detalleEnvioHtml() {
           ${kvHtml("Cliente", `<span class="mono">${escapeHtml(envio.cliente_id)}</span>`)}
           ${kvHtml("Peso", fmtNum(envio.peso_kg) + " kg")}
           ${kvHtml("Volumen", envio.volumen_m3 != null ? fmtNum(envio.volumen_m3) + " m³" : "—")}
-          ${kvHtml("Internacional", envio.es_internacional ? "Sí 🌎" : "No")}
+          ${kvHtml("Internacional", envio.es_internacional ? `Sí ${icon("globe")}` : "No")}
           ${kvHtml("Fecha límite SLA", envio.fecha_limite_sla ? fmtFechaHora(envio.fecha_limite_sla) : "—")}
           ${kvHtml("Vehículo asignado", envio.vehiculo_id ? vehiculoPlaca(envio.vehiculo_id) + " (" + shortId(envio.vehiculo_id) + ")" : "—")}
           ${kvHtml("Ruta", envio.ruta_id ? shortId(envio.ruta_id) + ` (<span class="mono">${escapeHtml(envio.ruta_id)}</span>)` : "—")}
@@ -709,9 +733,9 @@ async function detalleEnvioHtml() {
       <div class="card">
         <div class="card-header"><div><h2>Acciones</h2><div class="sub">Operaciones sobre el envío</div></div></div>
         <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
-          ${puedeAsignar ? `<button type="button" class="btn btn-primary" data-action="modal-asignar" data-id="${escapeHtml(envio.id)}">🚚 Asignar vehículo</button>` : ""}
-          ${puedeEstado ? `<button type="button" class="btn btn-ghost" data-action="modal-estado" data-id="${escapeHtml(envio.id)}">🔄 Cambiar estado</button>` : ""}
-          <button type="button" class="btn btn-success" data-action="modal-prueba" data-id="${escapeHtml(envio.id)}" ${yaEntregado ? "disabled" : ""}>📸 Prueba de entrega</button>
+          ${puedeAsignar ? `<button type="button" class="btn btn-primary" data-action="modal-asignar" data-id="${escapeHtml(envio.id)}">${icon("truck")} Asignar vehículo</button>` : ""}
+          ${puedeEstado ? `<button type="button" class="btn btn-ghost" data-action="modal-estado" data-id="${escapeHtml(envio.id)}">${icon("refresh-cw")} Cambiar estado</button>` : ""}
+          <button type="button" class="btn btn-success" data-action="modal-prueba" data-id="${escapeHtml(envio.id)}" ${yaEntregado ? "disabled" : ""}>${icon("camera")} Prueba de entrega</button>
         </div>
       </div>
     </div>`;
@@ -740,7 +764,7 @@ function modalNuevoEnvio() {
             <input id="e-sla" name="fecha_limite_sla" type="datetime-local" /></div>
           <div class="field full"><label>Opciones</label>
             <div class="checkbox-group">
-              <label><input type="checkbox" name="es_internacional" /> 🌎 Envío internacional</label>
+              <label><input type="checkbox" name="es_internacional" /> ${icon("globe")} Envío internacional</label>
             </div></div>
         </div>
       </form>`,
@@ -890,7 +914,7 @@ async function submitPrueba(form, id) {
   try {
     await registrarPruebaEntrega(id, payload);
     closeModal();
-    toast("✅ ¡Entrega confirmada!", "success");
+    toast("Entrega confirmada", "success");
     renderEnvios().catch(console.error);
   } catch (err) {
     toast(err.message, "error");
@@ -918,7 +942,7 @@ async function renderRutas() {
       <td class="number">${r.distancia_km != null ? fmtNum2(r.distancia_km) + " km" : "—"}</td>
       <td>${r.paradas && Array.isArray(r.paradas) ? fmtNum(r.paradas.length) + " paradas" : "—"}</td>
       <td>${r.hora_estimada_llegada ? fmtFechaHora(r.hora_estimada_llegada) : "—"}</td>
-      <td>${r.veces_recalculada > 0 ? `<span class="chip">↻ ${r.veces_recalculada}</span>` : "—"}</td>
+      <td>${r.veces_recalculada > 0 ? `<span class="chip">${icon("rotate-cw")} ${r.veces_recalculada}</span>` : "—"}</td>
       <td>${fmtFecha(r.creado_en)}</td>
     </tr>`);
 
@@ -926,7 +950,7 @@ async function renderRutas() {
     <div class="card">
       <div class="card-header">
         <div><h2>Rutas (${state.rutas.length})</h2><div class="sub">Clic para ver historial de recálculos</div></div>
-        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
       </div>
       ${tablaSimple(
         ["ID", "Envío", "Vehículo", "Distancia", "Paradas", "ETA", "Recálculos", "Creada"],
@@ -1007,7 +1031,7 @@ function modalRutaDetalle(ruta) {
       </form>`,
     footer: `
       <button type="button" class="btn btn-ghost" data-action="close-modal">Cerrar</button>
-      <button type="submit" class="btn btn-primary" form="recalcular-ruta">↻ Recalcular</button>`,
+      <button type="submit" class="btn btn-primary" form="recalcular-ruta">${icon("rotate-cw")} Recalcular</button>`,
   });
 }
 
@@ -1039,7 +1063,7 @@ async function showRutaHistorial(id) {
     ? historial.map(
         (h) => `
       <div class="tl-item">
-        <div class="tl-title">↻ ${escapeHtml(h.motivo_recalculo || "Recálculo")}</div>
+        <div class="tl-title">${icon("rotate-cw")} ${escapeHtml(h.motivo_recalculo || "Recálculo")}</div>
         <div class="tl-date">${fmtFechaHora(h.recalculado_en)}</div>
         <div class="tl-notes">Distancia anterior: ${h.distancia_km_anterior != null ? fmtNum2(h.distancia_km_anterior) + " km" : "—"} · ETA anterior: ${h.hora_estimada_llegada_anterior ? fmtFechaHora(h.hora_estimada_llegada_anterior) : "—"}</div>
       </div>`
@@ -1104,8 +1128,8 @@ async function renderTelemetria() {
           )
           .join("");
         const kpiHtml = ultima.codigo_obd2
-          ? `<div class="chip" style="background:var(--danger-soft);color:var(--danger)">⚠️ OBD2: ${escapeHtml(ultima.codigo_obd2)}</div>`
-          : `<div class="chip" style="background:var(--success-soft);color:var(--success)">✓ Sin códigos OBD2</div>`;
+          ? `<div class="chip" style="background:var(--danger-soft);color:var(--danger)">${icon("alert-triangle")} OBD2: ${escapeHtml(ultima.codigo_obd2)}</div>`
+          : `<div class="chip" style="background:var(--success-soft);color:var(--success)">${icon("check")} Sin códigos OBD2</div>`;
 
         const rows = lecturas.map((l, i) => `
           <tr class="stagger" style="--i:${i}">
@@ -1130,7 +1154,7 @@ async function renderTelemetria() {
             ${tablaSimple(["Tiempo", "Lat, Lng", "Vel. km/h", "Combustible", "Motor °C", "Carga °C", "Estado"], rows, { emptyEmoji: "⌖" })}
           </div>`;
       } else {
-        contenido = emptyState("⌖", "Este vehículo no tiene lecturas de telemetría. Registrá la primera con «＋ Registrar lectura».");
+        contenido = emptyState("⌖", "Este vehículo no tiene lecturas de telemetría. Registrá la primera con «Registrar lectura».");
       }
     } catch (err) {
       contenido = emptyState("⚠️", err.message);
@@ -1141,7 +1165,7 @@ async function renderTelemetria() {
     ? `<div class="card spotlight mt-16">
         <div class="card-header">
           <div><h2>Mapa de seguimiento</h2><div class="sub">Posición GPS de la flota y recorrido reciente del vehículo seleccionado</div></div>
-          <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+          <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
         </div>
         <div class="card-body">
           <div id="map-tracking" class="map-box" aria-label="Mapa de seguimiento de vehículos"></div>
@@ -1511,7 +1535,7 @@ async function renderAduana() {
     <div class="card">${filtroHtml}
       <div class="card-header" style="border:none;padding-bottom:8px">
         <div><h2>Declaraciones (${declaraciones.length})</h2></div>
-        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
       </div>
       ${tablaSimple(
         ["ID", "Envío", "Origen → Destino", "Documentos", "Estado", "Motivo retención", "Creada"],
@@ -1571,10 +1595,10 @@ async function renderFacturacion() {
   );
 
   const kpis = [
-    { icon: "🧾", cls: "indigo", value: (facturas || []).length, label: "Facturas" },
-    { icon: "✅", cls: "green", value: (facturas || []).filter((f) => f.estado === "pagada").length, label: "Pagadas" },
-    { icon: "⏳", cls: "amber", value: (facturas || []).filter((f) => f.estado === "emitida").length, label: "Emitidas" },
-    { icon: "📏", cls: "blue", value: (costos || []).length, label: "Costos de ruta" },
+    { icon: "receipt", cls: "indigo", value: (facturas || []).length, label: "Facturas" },
+    { icon: "circle-check", cls: "green", value: (facturas || []).filter((f) => f.estado === "pagada").length, label: "Pagadas" },
+    { icon: "clock", cls: "amber", value: (facturas || []).filter((f) => f.estado === "emitida").length, label: "Emitidas" },
+    { icon: "ruler", cls: "blue", value: (costos || []).length, label: "Costos de ruta" },
   ];
 
   const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
@@ -1605,7 +1629,7 @@ async function renderFacturacion() {
     <div class="card spotlight">
       <div class="card-header">
         <div><h2>Facturas (${(facturas || []).length})</h2><div class="sub">Período, monto y estado</div></div>
-        <button type="button" class="btn btn-primary" data-action="cerrar-periodo">🔒 Cerrar período</button>
+        <button type="button" class="btn btn-primary" data-action="cerrar-periodo">${icon("lock")} Cerrar período</button>
       </div>
       ${tablaSimple(["ID", "Cliente", "Período", "Monto", "Estado", "Emitida"], factRows, { emptyEmoji: "🧾", emptyText: "Sin facturas. Usá «Cerrar período» para generarlas." })}
     </div>
@@ -1697,7 +1721,7 @@ async function renderNotificaciones() {
     <div class="card">
       <div class="card-header">
         <div><h2>Notificaciones (${notis.length})</h2><div class="sub">Últimos mensajes emitidos</div></div>
-        <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
       </div>
       ${tablaSimple(["Enviada", "Canal", "Destinatario", "Mensaje", "Evento"], rows, { emptyEmoji: "🔔" })}
     </div>`;
@@ -1767,12 +1791,12 @@ async function renderAnalitica() {
   try { resumen = await analyticsResumen(); } catch (_err) { resumen = null; }
 
   const kpis = [
-    { icon: "🛻", cls: "indigo", value: resumen ? resumen.total_vehiculos : null, label: "Vehículos" },
-    { icon: "🧑‍✈️", cls: "green", value: resumen ? resumen.total_conductores : null, label: "Conductores" },
-    { icon: "🚚", cls: "blue", value: resumen ? resumen.envios_en_transito : null, label: "En tránsito" },
-    { icon: "✅", cls: "green", value: resumen ? resumen.envios_entregados_historico : null, label: "Entregados" },
-    { icon: "⚠️", cls: "red", value: resumen ? resumen.envios_con_incidencia_historico : null, label: "Con incidencia" },
-    { icon: "🎯", cls: "amber", value: resumen ? resumen.tasa_cumplimiento_sla_global_pct : null, decimals: 1, suffix: "%", label: "Cumplimiento SLA" },
+    { icon: "truck", cls: "indigo", value: resumen ? resumen.total_vehiculos : null, label: "Vehículos" },
+    { icon: "users", cls: "green", value: resumen ? resumen.total_conductores : null, label: "Conductores" },
+    { icon: "truck", cls: "blue", value: resumen ? resumen.envios_en_transito : null, label: "En tránsito" },
+    { icon: "circle-check", cls: "green", value: resumen ? resumen.envios_entregados_historico : null, label: "Entregados" },
+    { icon: "alert-triangle", cls: "red", value: resumen ? resumen.envios_con_incidencia_historico : null, label: "Con incidencia" },
+    { icon: "target", cls: "amber", value: resumen ? resumen.tasa_cumplimiento_sla_global_pct : null, decimals: 1, suffix: "%", label: "Cumplimiento SLA" },
   ];
 
   const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
@@ -1871,7 +1895,7 @@ async function renderAnalitica() {
   }
 
   $("#view").innerHTML = `
-    ${resumen ? `<div class="mb-16"><span class="chip">Última actualización ETL: ${fmtFechaHora(resumen.ultima_actualizacion_etl)}</span></div>` : `<div class="mb-16"><span class="chip">Analytics sin resumen. Probá «▶ Ejecutar ETL».</span></div>`}
+    ${resumen ? `<div class="mb-16"><span class="chip">${icon("refresh-cw")} Última actualización ETL: ${fmtFechaHora(resumen.ultima_actualizacion_etl)}</span></div>` : `<div class="mb-16"><span class="chip">${icon("info")} Analytics sin resumen. Probá «Ejecutar ETL».</span></div>`}
     <div class="kpis">${kpiHtml}</div>
     <div class="grid-2">
       <div class="card spotlight">
@@ -2178,7 +2202,7 @@ $("#btn-config-api").addEventListener("click", modalConfigApi);
 
 // Reloj "actualizado" en el dashboard (solo actualiza si el elemento vive)
 setInterval(() => {
-  const el = $("#dashboard-updated");
+  const el = $("#dashboard-updated .chip-txt");
   if (el) el.textContent = "Actualizado " + new Date().toLocaleTimeString("es-AR", { hour12: false });
 }, 1000);
 
