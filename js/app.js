@@ -74,7 +74,20 @@ const state = {
   envioSeleccionadoId: null,
   envioDetalle: null,
   envioEventos: [],
+  mapa: null, // instancia de Leaflet (vista Telemetría)
 };
+
+/* ---------- Loading overlay ---------- */
+/* El overlay (#loading) es visible por defecto via CSS. Se retira cuando la
+   app termina el primer render y, como red de seguridad, a los 5 s
+   (CDN caído, API sin responder, etc.) para no bloquear la vista. */
+function ocultarLoading() {
+  const el = document.getElementById("loading");
+  if (!el || el.getAttribute("data-mounted") === "false") return;
+  el.setAttribute("data-mounted", "false");
+  setTimeout(() => el.remove(), 400);
+}
+setTimeout(ocultarLoading, 5000);
 
 /* ==================================================================
    3. Navegación
@@ -115,6 +128,14 @@ async function navigate(view, opts = {}) {
     b.textContent = def.action.label;
     b.addEventListener("click", def.action.fn);
     actions.appendChild(b);
+  }
+
+  // Al cambiar de vista, destruir el mapa Leaflet si estaba montado
+  // (si no, el contenedor queda con listeners huérfanos y el próximo
+  // render intentaría inicializar un contenedor ya usado).
+  if (state.mapa) {
+    try { state.mapa.remove(); } catch (_err) { /* ya destruido */ }
+    state.mapa = null;
   }
 
   $("#view").innerHTML = skeletonHtml();
@@ -1057,9 +1078,11 @@ async function renderTelemetria() {
     : emptyState("🛻", "No hay vehículos. Cargá vehículos en la pestaña Vehículos para ver telemetría.");
 
   let contenido = emptyState("⌖", "Seleccioná un vehículo para ver sus lecturas.");
+  let lecturasSel = []; // lecturas del vehículo seleccionado (para el mapa)
   if (vehiculoSeleccionado) {
     try {
       const lecturas = (await listarTelemetria(vehiculoSeleccionado, 40)) || [];
+      lecturasSel = lecturas;
       if (lecturas.length) {
         const ultima = lecturas[0];
         // Gauges radiales: pct se calcula contra un rango razonable por métrica
@@ -1114,12 +1137,123 @@ async function renderTelemetria() {
     }
   }
 
+  const mapaCard = state.vehicles.length
+    ? `<div class="card spotlight mt-16">
+        <div class="card-header">
+          <div><h2>Mapa de seguimiento</h2><div class="sub">Posición GPS de la flota y recorrido reciente del vehículo seleccionado</div></div>
+          <button type="button" class="btn btn-ghost small" data-action="reload-view">↻ Recargar</button>
+        </div>
+        <div class="card-body">
+          <div id="map-tracking" class="map-box" aria-label="Mapa de seguimiento de vehículos"></div>
+          <div class="map-legend">
+            <span><span class="dot-color" style="background:#4f46e5"></span>Vehículo seleccionado</span>
+            <span><span class="dot-color" style="background:#16a34a"></span>Resto de la flota</span>
+            <span><span class="dot-color" style="background:#4f46e5;width:18px;height:3px;border-radius:2px"></span>Recorrido (últimas lecturas)</span>
+          </div>
+        </div>
+      </div>`
+    : "";
+
   $("#view").innerHTML = `
     <div class="card">${selector}</div>
+    ${mapaCard}
     ${contenido}`;
 
   animarGauges();
   animarValores();
+  if (mapaCard) {
+    renderMapaTracking(vehiculoSeleccionado, lecturasSel).catch((err) =>
+      console.warn("Mapa de seguimiento:", err)
+    );
+  }
+}
+
+/* ---------- Mapa Leaflet de seguimiento ----------
+   Muestra la última posición conocida de cada vehículo (1 request por
+   vehículo, en paralelo) como circleMarker con popup, y el recorrido
+   del vehículo seleccionado como polyline (las lecturas ya cargadas).
+   Tolera: CDN de Leaflet caído, servicios sin GPS, vista cambiada. */
+async function renderMapaTracking(vehiculoSel, lecturasSel) {
+  const cont = $("#map-tracking");
+  if (!cont) return; // la vista cambió antes de que terminara el fetch
+
+  if (typeof L === "undefined") {
+    cont.outerHTML = emptyState("🗺️", "No se pudo cargar Leaflet (CDN). El mapa necesita conexión a internet.");
+    return;
+  }
+
+  const posiciones = await Promise.all(
+    (state.vehicles || []).map(async (v) => {
+      try {
+        const ls = await listarTelemetria(v.id, 1);
+        const l = Array.isArray(ls) && ls.length ? ls[0] : null;
+        if (l && l.latitud != null && l.longitud != null) return { v, l };
+      } catch (_err) {
+        /* vehículo sin lecturas o tracking caído: se omite */
+      }
+      return null;
+    })
+  );
+  const pts = posiciones.filter(Boolean);
+
+  if (!pts.length) {
+    cont.outerHTML = emptyState("🛰️", "Ningún vehículo tiene posición GPS. Registrá lecturas de telemetría para ver el mapa.");
+    return;
+  }
+  // El contenedor puede haber desaparecido mientras hacíamos los fetch
+  const cont2 = $("#map-tracking");
+  if (!cont2) return;
+
+  if (state.mapa) {
+    try { state.mapa.remove(); } catch (_err) { /* ya destruido */ }
+    state.mapa = null;
+  }
+
+  const map = L.map(cont2, { scrollWheelZoom: false }).setView([pts[0].l.latitud, pts[0].l.longitud], 7);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+
+  const bounds = [];
+
+  // Recorrido del vehículo seleccionado (ascendente por tiempo)
+  const track = (Array.isArray(lecturasSel) ? lecturasSel : [])
+    .filter((x) => x && x.latitud != null && x.longitud != null)
+    .slice()
+    .sort((a, b) => new Date(a.tiempo) - new Date(b.tiempo))
+    .map((x) => {
+      const p = [x.latitud, x.longitud];
+      bounds.push(p);
+      return p;
+    });
+  if (track.length > 1) {
+    L.polyline(track, { color: "#4f46e5", weight: 3, opacity: 0.8, lineJoin: "round" }).addTo(map);
+  }
+
+  // Marcadores de la flota
+  pts.forEach(({ v, l }) => {
+    const esSel = v.id === vehiculoSel;
+    bounds.push([l.latitud, l.longitud]);
+    const m = L.circleMarker([l.latitud, l.longitud], {
+      radius: esSel ? 9 : 7,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: esSel ? "#4f46e5" : "#16a34a",
+      fillOpacity: 1,
+    }).addTo(map);
+    m.bindPopup(
+      `<strong>${escapeHtml(v.placa)}</strong> · ${escapeHtml(v.tipo)}<br>` +
+        `Velocidad: ${l.velocidad_kmh != null ? fmtNum2(l.velocidad_kmh) + " km/h" : "—"}<br>` +
+        `Combustible: ${l.nivel_combustible_pct != null ? fmtPct(l.nivel_combustible_pct) : "—"}<br>` +
+        `${escapeHtml(fmtFechaHora(l.tiempo))}`
+    );
+  });
+
+  if (bounds.length > 1) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 12 });
+  state.mapa = map;
+  // El contenedor se acomoda recién después del render (skeleton → vista)
+  setTimeout(() => map.invalidateSize(), 250);
 }
 
 function modalNuevaLectura() {
@@ -2031,7 +2165,11 @@ $("#btn-config-api").addEventListener("click", modalConfigApi);
     /* la API puede estar caída; se intenta igual */
   }
   checkHealth();
-  navigate("dashboard").catch(console.error);
+  try {
+    await navigate("dashboard");
+  } finally {
+    ocultarLoading();
+  }
 })();
 
 /* ==================================================================
