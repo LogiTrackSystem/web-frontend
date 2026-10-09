@@ -15,33 +15,58 @@ const ENVIO_ESTADOS = {
   pendiente: { label: "Pendiente", cls: "neutral" },
   en_transito: { label: "En tránsito", cls: "info" },
   con_incidencia: { label: "Con incidencia", cls: "warn" },
+  // El Shipment Service marca "retenido_aduana" cuando Customs retiene un
+  // envío internacional (evento customs.held) y lo libera a "en_transito".
+  retenido_aduana: { label: "Retenido en aduana", cls: "indigo" },
   devuelto: { label: "Devuelto", cls: "danger" },
   entregado: { label: "Entregado", cls: "success" },
 };
 
 const VEHICULO_TIPOS = ["Camión", "Camioneta", "Furgón", "Moto", "Trailer", "Utilitario"];
+// Estados reales del Fleet Service: active, en_transito, en_mantenimiento,
+// fuera_de_servicio. Se conservan "mantenimiento"/"inactive" como alias para
+// datos legados creados antes del cambio de catálogo.
 const VEHICULO_ESTADOS = {
   active: { label: "Activo", cls: "success" },
+  en_transito: { label: "En tránsito", cls: "info" },
+  en_mantenimiento: { label: "En mantenimiento", cls: "warn" },
+  fuera_de_servicio: { label: "Fuera de servicio", cls: "danger" },
+  mantenimiento: { label: "En mantenimiento", cls: "warn" },
   inactive: { label: "Inactivo", cls: "neutral" },
-  mantenimiento: { label: "Mantenimiento", cls: "warn" },
 };
+// Opciones editables de estado de vehículo (en_transito lo pone Routing al
+// asignar una ruta, por eso se ofrece con etiqueta "automático").
+const VEHICULO_ESTADO_OPCIONES = [
+  ["active", "Activo"],
+  ["en_transito", "En tránsito (automático)"],
+  ["en_mantenimiento", "En mantenimiento"],
+  ["fuera_de_servicio", "Fuera de servicio"],
+];
+const normalizarEstadoVehiculo = (estado) =>
+  estado === "mantenimiento" ? "en_mantenimiento" : estado === "inactive" ? "fuera_de_servicio" : estado;
+
 const CONDUCTOR_ESTADOS = {
   available: { label: "Disponible", cls: "success" },
   in_route: { label: "En ruta", cls: "info" },
   off: { label: "Fuera de servicio", cls: "neutral" },
 };
+// Customs Service genera/patcha declaraciones con "aprobado" / "retenido".
 const DECLARACION_ESTADOS = {
   pendiente: { label: "Pendiente", cls: "neutral" },
-  aprobada: { label: "Aprobada", cls: "success" },
-  retenida: { label: "Retenida", cls: "warn" },
-  rechazada: { label: "Rechazada", cls: "danger" },
+  aprobado: { label: "Aprobada", cls: "success" },
+  retenido: { label: "Retenida", cls: "warn" },
+  rechazado: { label: "Rechazada", cls: "danger" },
 };
+// Billing Service usa "abierta" (mientras acumula) y "cerrada" (al cerrar el
+// período). pagada/vencida quedan por compatibilidad.
 const FACTURA_ESTADOS = {
-  emitida: { label: "Emitida", cls: "info" },
+  abierta: { label: "Abierta", cls: "info" },
+  cerrada: { label: "Cerrada", cls: "success" },
   pagada: { label: "Pagada", cls: "success" },
   vencida: { label: "Vencida", cls: "danger" },
 };
 const RUTA_URGENCIA = {
+  critica: { label: "Crítica", cls: "danger" },
   alta: { label: "Alta", cls: "danger" },
   media: { label: "Media", cls: "warn" },
   baja: { label: "Baja", cls: "neutral" },
@@ -122,11 +147,13 @@ const VIEWS = {
 };
 
 async function navigate(view, opts = {}) {
-  if (opts.envioId !== undefined) state.envioSeleccionadoId = opts.envioId;
+  // Limpiar filtros primero y recién después fijar el envío seleccionado,
+  // para que "crear envío y abrir su detalle" no pierda la selección.
   if (opts.limpiarFiltros) {
     state.filtros = { estado: "", cliente_id: "" };
     state.envioSeleccionadoId = null;
   }
+  if (opts.envioId !== undefined) state.envioSeleccionadoId = opts.envioId;
   state.view = view;
   $$(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.nav === view));
 
@@ -287,8 +314,8 @@ async function renderDashboard() {
 
   const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
 
-  const orden = ["pendiente", "en_transito", "con_incidencia", "devuelto", "entregado"];
-  const colores = { neutral: "#64748b", info: "#2563eb", warn: "#d97706", danger: "#dc2626", success: "#16a34a" };
+  const orden = ["pendiente", "en_transito", "retenido_aduana", "con_incidencia", "devuelto", "entregado"];
+  const colores = { neutral: "#64748b", info: "#2563eb", warn: "#d97706", danger: "#dc2626", success: "#16a34a", indigo: "#4f46e5" };
   const barras = orden
     .filter((e) => ENVIO_ESTADOS[e])
     .map((e, i) => {
@@ -438,9 +465,9 @@ function modalNuevoVehiculo() {
             <input id="v-seguro" name="vencimiento_seguro" type="date" /></div>
           <div class="field"><label for="v-estado">Estado</label>
             <select id="v-estado" name="estado">
-              <option value="active">Activo</option>
-              <option value="inactive">Inactivo</option>
-              <option value="mantenimiento">Mantenimiento</option>
+              ${VEHICULO_ESTADO_OPCIONES.filter(([v]) => v !== "en_transito")
+                .map(([v, l]) => `<option value="${v}">${l}</option>`)
+                .join("")}
             </select></div>
           <div class="field"><label>Especificaciones</label>
             <div class="checkbox-group">
@@ -479,6 +506,7 @@ async function submitNuevoVehiculo(form) {
 }
 
 function modalCambioEstadoVehiculo(id, estadoActual) {
+  const actual = normalizarEstadoVehiculo(estadoActual);
   openModal({
     title: "Cambiar estado del vehículo",
     body: `
@@ -486,10 +514,9 @@ function modalCambioEstadoVehiculo(id, estadoActual) {
         <div class="form-grid">
           <div class="field full"><label for="ve-estado">Nuevo estado <span class="req">*</span></label>
             <select id="ve-estado" name="estado" required>
-              <option value="active" ${estadoActual === "active" ? "selected" : ""}>Activo</option>
-              <option value="inactive" ${estadoActual === "inactive" ? "selected" : ""}>Inactivo</option>
-              <option value="mantenimiento" ${estadoActual === "mantenimiento" ? "selected" : ""}>Mantenimiento</option>
-            </select></div>
+              ${VEHICULO_ESTADO_OPCIONES.map(([v, l]) => `<option value="${v}" ${actual === v ? "selected" : ""}>${l}</option>`).join("")}
+            </select>
+            <div class="hint">"En tránsito" lo gestiona Routing Service al asignar una ruta.</div></div>
         </div>
       </form>`,
     footer: `
@@ -619,6 +646,43 @@ async function loadEnvios() {
   state.shipments = (await listarEnvios(params)) || [];
 }
 
+/* ---------- Clientes (interacción cliente ↔ envío) ----------
+   El backend no tiene un servicio de clientes: el cliente es un UUID que une
+   envíos, notificaciones (preferencias por cliente) y facturación (tarifas).
+   Derivamos la lista de clientes conocidos de los envíos cargados para poder
+   elegirlos en los formularios en lugar de pegar el UUID a mano. */
+function clientesConocidos() {
+  return [...new Set(state.shipments.map((s) => s.cliente_id).filter(Boolean))];
+}
+
+async function asegurarEnviosCargados() {
+  if (state.shipments.length) return;
+  try { state.shipments = (await listarEnvios()) || []; } catch (_err) { /* sin datos */ }
+}
+
+function datalistClientes(id = "clientes-conocidos") {
+  const ids = clientesConocidos();
+  if (!ids.length) return "";
+  return `<datalist id="${id}">${ids.map((c) => `<option value="${escapeHtml(c)}"></option>`).join("")}</datalist>`;
+}
+
+/* La asignación de vehículo y ruta es automática (routing-service consume
+   shipment.created vía RabbitMQ) y asíncrona: reintentamos unos segundos
+   para reflejarla apenas llega, sin bloquear la navegación. */
+async function esperarAsignacionAutomatica(envioId, intentos = 8, ms = 1200) {
+  for (let i = 0; i < intentos; i++) {
+    await new Promise((r) => setTimeout(r, ms));
+    if (state.view !== "envios" || state.envioSeleccionadoId !== envioId) return;
+    let envio = null;
+    try { envio = await obtenerEnvio(envioId); } catch (_err) { continue; }
+    if (envio && envio.vehiculo_id) {
+      toast(`Vehículo ${vehiculoPlaca(envio.vehiculo_id)} y ruta asignados automáticamente`, "success");
+      renderEnvios().catch(console.error);
+      return;
+    }
+  }
+}
+
 async function renderEnvios() {
   await conTiempo(loadEnvios());
   if (!state.vehicles.length) {
@@ -635,7 +699,8 @@ async function renderEnvios() {
             .join("")}
         </select></div>
       <div class="field grow"><label for="f-cliente">Cliente (ID)</label>
-        <input id="f-cliente" name="cliente_id" value="${escapeHtml(state.filtros.cliente_id)}" placeholder="UUID del cliente" /></div>
+        <input id="f-cliente" name="cliente_id" list="clientes-conocidos" value="${escapeHtml(state.filtros.cliente_id)}" placeholder="UUID del cliente" />
+        ${datalistClientes()}</div>
       <button type="submit" class="btn btn-primary">Filtrar</button>
       <button type="button" class="btn btn-ghost" data-action="clear-filtros">Limpiar</button>
     </form>`;
@@ -699,7 +764,8 @@ async function detalleEnvioHtml() {
         .join("")
     : emptyState("🗓️", "Sin eventos registrados todavía.");
 
-  const puedeAsignar = !envio.vehiculo_id && envio.estado !== "entregado";
+  const puedeAsignar = envio.estado !== "entregado";
+  const labelAsignar = envio.vehiculo_id ? "Reasignar vehículo" : "Asignar vehículo manualmente";
   const puedeEstado = envio.estado !== "entregado";
 
   return `
@@ -733,9 +799,10 @@ async function detalleEnvioHtml() {
       <div class="card">
         <div class="card-header"><div><h2>Acciones</h2><div class="sub">Operaciones sobre el envío</div></div></div>
         <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
-          ${puedeAsignar ? `<button type="button" class="btn btn-primary" data-action="modal-asignar" data-id="${escapeHtml(envio.id)}">${icon("truck")} Asignar vehículo</button>` : ""}
+          ${puedeAsignar ? `<button type="button" class="btn btn-primary" data-action="modal-asignar" data-id="${escapeHtml(envio.id)}">${icon("truck")} ${labelAsignar}</button>` : ""}
           ${puedeEstado ? `<button type="button" class="btn btn-ghost" data-action="modal-estado" data-id="${escapeHtml(envio.id)}">${icon("refresh-cw")} Cambiar estado</button>` : ""}
           <button type="button" class="btn btn-success" data-action="modal-prueba" data-id="${escapeHtml(envio.id)}" ${yaEntregado ? "disabled" : ""}>${icon("camera")} Prueba de entrega</button>
+          <div class="hint" style="flex-basis:100%">${icon("info")} Al crear el envío, el vehículo y la ruta se asignan automáticamente y el cliente recibe notificaciones según sus preferencias. Usá «${labelAsignar}» solo para forzar un cambio.</div>
         </div>
       </div>
     </div>`;
@@ -743,15 +810,17 @@ async function detalleEnvioHtml() {
 
 /* ---------- Modal nuevo envío ---------- */
 
-function modalNuevoEnvio() {
+async function modalNuevoEnvio() {
+  await asegurarEnviosCargados();
   openModal({
     title: "Nuevo envío",
     body: `
       <form id="nuevo-envio" data-form="nuevo-envio">
         <div class="form-grid">
           <div class="field"><label for="e-cliente">Cliente (ID) <span class="req">*</span></label>
-            <input id="e-cliente" name="cliente_id" required placeholder="UUID del cliente" />
-            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="e-cliente">Generar UUID</button></div></div>
+            <input id="e-cliente" name="cliente_id" list="clientes-conocidos" required placeholder="UUID del cliente" />
+            ${datalistClientes()}
+            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="e-cliente">Generar UUID</button>${clientesConocidos().length ? ` · ${clientesConocidos().length} clientes conocidos` : ""}</div></div>
           <div class="field"><label for="e-origen">Origen <span class="req">*</span></label>
             <input id="e-origen" name="origen" maxlength="255" required placeholder="Buenos Aires" /></div>
           <div class="field"><label for="e-destino">Destino <span class="req">*</span></label>
@@ -766,6 +835,7 @@ function modalNuevoEnvio() {
             <div class="checkbox-group">
               <label><input type="checkbox" name="es_internacional" /> ${icon("globe")} Envío internacional</label>
             </div></div>
+          <div class="field full"><div class="hint">${icon("info")} Al guardar, el vehículo y la ruta se asignan automáticamente según capacidad, y se notificará al cliente según sus preferencias.</div></div>
         </div>
       </form>`,
     footer: `
@@ -792,8 +862,10 @@ async function submitNuevoEnvio(form) {
   try {
     const creado = await crearEnvio(payload);
     closeModal();
-    toast(`Envío creado (${shortId(creado.id)})`, "success");
+    toast(`Envío ${shortId(creado.id)} creado — asignando vehículo y ruta…`, "success");
     await navigate("envios", { envioId: creado.id, limpiarFiltros: true });
+    // La asignación es automática/event-driven: reintenta en segundo plano.
+    esperarAsignacionAutomatica(creado.id);
   } catch (err) {
     toast(err.message, "error");
   }
@@ -804,7 +876,11 @@ async function submitNuevoEnvio(form) {
 function modalAsignar(id) {
   const opciones = state.vehicles.length
     ? `<option value="">Seleccioná un vehículo…</option>${state.vehicles
-        .map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.placa)} — ${escapeHtml(v.tipo)} (${fmtNum(v.capacidad_kg)} kg)</option>`)
+        .map((v) => {
+          const estado = (VEHICULO_ESTADOS[v.estado] || {}).label || v.estado || "—";
+          const libre = v.estado === "active" ? "" : " — no disponible";
+          return `<option value="${escapeHtml(v.id)}">${escapeHtml(v.placa)} — ${escapeHtml(v.tipo)} (${fmtNum(v.capacidad_kg)} kg) · ${escapeHtml(estado)}${libre}</option>`;
+        })
         .join("")}`
     : `<option value="">No hay vehículos cargados</option>`;
 
@@ -1596,8 +1672,8 @@ async function renderFacturacion() {
 
   const kpis = [
     { icon: "receipt", cls: "indigo", value: (facturas || []).length, label: "Facturas" },
-    { icon: "circle-check", cls: "green", value: (facturas || []).filter((f) => f.estado === "pagada").length, label: "Pagadas" },
-    { icon: "clock", cls: "amber", value: (facturas || []).filter((f) => f.estado === "emitida").length, label: "Emitidas" },
+    { icon: "circle-check", cls: "green", value: (facturas || []).filter((f) => f.estado === "cerrada").length, label: "Cerradas" },
+    { icon: "clock", cls: "amber", value: (facturas || []).filter((f) => f.estado === "abierta").length, label: "Abiertas" },
     { icon: "ruler", cls: "blue", value: (costos || []).length, label: "Costos de ruta" },
   ];
 
@@ -1641,15 +1717,17 @@ async function renderFacturacion() {
   animarValores();
 }
 
-function modalTarifa() {
+async function modalTarifa() {
+  await asegurarEnviosCargados();
   openModal({
     title: "Configurar tarifa de cliente",
     body: `
       <form id="tarifa-form" data-form="tarifa-form">
         <div class="form-grid">
           <div class="field full"><label for="t-cliente">Cliente (ID) <span class="req">*</span></label>
-            <input id="t-cliente" name="cliente_id" required placeholder="UUID del cliente" />
-            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="t-cliente">Generar UUID</button></div></div>
+            <input id="t-cliente" name="cliente_id" list="clientes-conocidos" required placeholder="UUID del cliente" />
+            ${datalistClientes()}
+            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="t-cliente">Generar UUID</button>${clientesConocidos().length ? ` · ${clientesConocidos().length} clientes conocidos` : ""}</div></div>
           <div class="field full"><label for="t-modelo">Modelo de tarifa</label>
             <select id="t-modelo" name="modelo">
               <option value="por_km">Por kilómetro</option>
@@ -1727,20 +1805,21 @@ async function renderNotificaciones() {
     </div>`;
 }
 
-function modalPreferencias() {
+async function modalPreferencias() {
+  await asegurarEnviosCargados();
   openModal({
     title: "Preferencias de notificación",
     body: `
       <form id="preferencias-form" data-form="preferencias-form">
         <div class="form-grid">
           <div class="field full"><label for="pf-cliente">Cliente (ID) <span class="req">*</span></label>
-            <input id="pf-cliente" name="cliente_id" required placeholder="UUID del cliente" />
-            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="pf-cliente">Generar UUID</button></div></div>
+            <input id="pf-cliente" name="cliente_id" list="clientes-conocidos" required placeholder="UUID del cliente" />
+            ${datalistClientes()}
+            <div class="hint"><button type="button" class="link-btn" data-action="gen-uuid" data-target="pf-cliente">Generar UUID</button>${clientesConocidos().length ? ` · ${clientesConocidos().length} clientes conocidos` : ""}</div></div>
           <div class="field full"><label for="pf-idioma">Idioma</label>
             <select id="pf-idioma" name="idioma">
               <option value="es">Español</option>
               <option value="en">English</option>
-              <option value="pt">Português</option>
             </select></div>
           <div class="field full"><label for="pf-canal">Canal preferido</label>
             <select id="pf-canal" name="canal_preferido">
