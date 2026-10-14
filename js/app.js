@@ -114,6 +114,14 @@ const state = {
   envioDetalle: null,
   envioEventos: [],
   mapa: null, // instancia de Leaflet (vista Telemetría)
+  mapaTimer: null, // refresco en vivo del mapa
+  mapaCapa: null, // capa con marcadores + recorrido
+  mapaFit: true, // encuadrar la próxima actualización
+  mapaVehiculoSel: null, // vehículo resaltado en el mapa
+  mapaPausado: false, // pausa del refresco automático
+  mapaActualizando: false, // evita solapamientos del refresco
+  mapaPosiciones: {}, // última posición conocida por vehículo
+  mapaRecorrido: [], // últimas lecturas del vehículo seleccionado
 };
 
 /* ---------- Loading overlay ---------- */
@@ -172,6 +180,10 @@ async function navigate(view, opts = {}) {
     b.addEventListener("click", def.action.fn);
     actions.appendChild(b);
   }
+
+  // Detener el refresco en vivo del mapa antes de cambiar de vista.
+  if (state.mapaTimer) { clearInterval(state.mapaTimer); state.mapaTimer = null; }
+  state.mapaPausado = false;
 
   // Al cambiar de vista, destruir el mapa Leaflet si estaba montado
   // (si no, el contenedor queda con listeners huérfanos y el próximo
@@ -1240,15 +1252,21 @@ async function renderTelemetria() {
   const mapaCard = state.vehicles.length
     ? `<div class="card spotlight mt-16">
         <div class="card-header">
-          <div><h2>Mapa de seguimiento</h2><div class="sub">Posición GPS de la flota y recorrido reciente del vehículo seleccionado</div></div>
-          <button type="button" class="btn btn-ghost small" data-action="reload-view">${icon("rotate-cw")} Recargar</button>
+          <div><h2>Mapa de seguimiento</h2><div class="sub">Posición GPS de la flota en tiempo real y recorrido reciente del vehículo seleccionado</div></div>
+          <div class="map-live-controls">
+            <span class="live" id="mapa-live"><span class="dot"></span>En vivo</span>
+            <span class="map-updated" id="mapa-updated">Esperando lecturas…</span>
+            <button type="button" class="btn btn-ghost small" data-action="mapa-toggle">${icon("pause")} Pausar</button>
+            <button type="button" class="btn btn-ghost small" data-action="mapa-centrar">${icon("maximize")} Centrar</button>
+          </div>
         </div>
         <div class="card-body">
           <div id="map-tracking" class="map-box" aria-label="Mapa de seguimiento de vehículos"></div>
           <div class="map-legend">
             <span><span class="dot-color" style="background:#4f46e5"></span>Vehículo seleccionado</span>
             <span><span class="dot-color" style="background:#16a34a"></span>Resto de la flota</span>
-            <span><span class="dot-color" style="background:#4f46e5;width:18px;height:3px;border-radius:2px"></span>Recorrido (últimas lecturas)</span>
+            <span><span class="dot-color" style="background:#4f46e5;width:16px;height:3px;border-radius:2px"></span>Recorrido reciente</span>
+            <span class="text-3">Se actualiza cada 5 s</span>
           </div>
         </div>
       </div>`
@@ -1262,86 +1280,154 @@ async function renderTelemetria() {
   animarGauges();
   animarValores();
   if (mapaCard) {
-    renderMapaTracking(vehiculoSeleccionado, lecturasSel).catch((err) =>
+    renderMapaTracking(vehiculoSeleccionado).catch((err) =>
       console.warn("Mapa de seguimiento:", err)
     );
   }
 }
 
-/* ---------- Mapa Leaflet de seguimiento ----------
-   Muestra la última posición conocida de cada vehículo (1 request por
-   vehículo, en paralelo) como circleMarker con popup, y el recorrido
-   del vehículo seleccionado como polyline (las lecturas ya cargadas).
+/* ---------- Mapa Leaflet de seguimiento (en vivo) ----------
+   Muestra la última posición GPS de cada vehículo y el recorrido
+   reciente del seleccionado. El mapa se crea una sola vez y luego se
+   refresca en forma periódica (MAPA_REFRESCO_MS) actualizando capa y
+   marcadores con pulso, para que las unidades se vean "en vivo".
    Tolera: CDN de Leaflet caído, servicios sin GPS, vista cambiada. */
-async function renderMapaTracking(vehiculoSel, lecturasSel) {
+const MAPA_REFRESCO_MS = 5000;
+
+function truckSvg() {
+  return (
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M14 18V6a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/>' +
+    '<path d="M14 9h4l4 4v4a1 1 0 0 1-1 1h-1"/><circle cx="7" cy="18" r="2"/>' +
+    '<path d="M9 18h6"/><circle cx="17" cy="18" r="2"/></svg>'
+  );
+}
+
+async function renderMapaTracking(vehiculoSel) {
   const cont = $("#map-tracking");
   if (!cont) return; // la vista cambió antes de que terminara el fetch
 
   if (typeof L === "undefined") {
-    cont.outerHTML = emptyState("🗺️", "No se pudo cargar Leaflet (CDN). El mapa necesita conexión a internet.");
+    cont.outerHTML = emptyState("🛰️", "No se pudo cargar Leaflet (CDN). El mapa necesita conexión a internet.");
     return;
   }
 
-  const posiciones = await Promise.all(
-    (state.vehicles || []).map(async (v) => {
-      try {
-        const ls = await listarTelemetria(v.id, 1);
-        const l = Array.isArray(ls) && ls.length ? ls[0] : null;
-        if (l && l.latitud != null && l.longitud != null) return { v, l };
-      } catch (_err) {
-        /* vehículo sin lecturas o tracking caído: se omite */
-      }
-      return null;
-    })
-  );
-  const pts = posiciones.filter(Boolean);
+  state.mapaVehiculoSel = vehiculoSel || null;
+  state.mapaFit = true;
 
-  if (!pts.length) {
-    cont.outerHTML = emptyState("🛰️", "Ningún vehículo tiene posición GPS. Registrá lecturas de telemetría para ver el mapa.");
-    return;
-  }
-  // El contenedor puede haber desaparecido mientras hacíamos los fetch
-  const cont2 = $("#map-tracking");
-  if (!cont2) return;
-
+  // Reutilizar la instancia si ya existe (p. ej. al cambiar de vehículo).
   if (state.mapa) {
     try { state.mapa.remove(); } catch (_err) { /* ya destruido */ }
     state.mapa = null;
   }
 
-  const map = L.map(cont2, { scrollWheelZoom: false }).setView([pts[0].l.latitud, pts[0].l.longitud], 7);
+  const map = L.map(cont, { scrollWheelZoom: true }).setView([4.6, -74.1], 6);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 18,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
+  state.mapa = map;
+  state.mapaCapa = L.layerGroup().addTo(map);
+  // El contenedor se acomoda recién después del render (skeleton → vista)
+  setTimeout(() => { if (state.mapa) state.mapa.invalidateSize(); }, 250);
 
-  const bounds = [];
+  await actualizarMapaTracking();
 
-  // Recorrido del vehículo seleccionado (ascendente por tiempo)
+  if (state.mapaTimer) { clearInterval(state.mapaTimer); state.mapaTimer = null; }
+  if (!state.mapaPausado) {
+    state.mapaTimer = setInterval(() => {
+      actualizarMapaTracking().catch((err) => console.warn("Mapa en vivo:", err));
+    }, MAPA_REFRESCO_MS);
+  }
+}
+
+/* Refresca marcadores y recorrido sin recrear el mapa (para el "en vivo").
+   Las consultas van en serie (con una pausa breve) para no saturar al
+   gateway/tracking —que crea una conexión por request— y, si una falla,
+   se conserva la última posición conocida para que el mapa no parpadee. */
+async function actualizarMapaTracking() {
+  const mapa = state.mapa;
+  const capa = state.mapaCapa;
+  if (!mapa || !capa || !document.getElementById("map-tracking")) return;
+  if (state.mapaActualizando) return; // evitar solapamientos
+  state.mapaActualizando = true;
+
+  const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+  const vehiculoSel = state.mapaVehiculoSel;
+  if (!state.mapaPosiciones) state.mapaPosiciones = {};
+
+  try {
+    const vehiculos = state.vehicles || [];
+    for (const v of vehiculos) {
+      let l = null;
+      for (let intento = 0; intento < 2 && !l; intento++) {
+        try {
+          const ls = await listarTelemetria(v.id, 1);
+          l = Array.isArray(ls) && ls.length ? ls[0] : null;
+        } catch (_err) {
+          l = null; // se reintenta o se usa la posición en caché
+        }
+        if (!l && intento === 0) await pausa(300);
+      }
+      if (l && l.latitud != null && l.longitud != null) {
+        state.mapaPosiciones[v.id] = { v, l };
+      }
+      await pausa(120);
+    }
+
+    // Recorrido del seleccionado (se conserva el anterior si falla).
+    let lecturasSel = state.mapaRecorrido || [];
+    if (vehiculoSel) {
+      for (let intento = 0; intento < 2; intento++) {
+        try {
+          const ls = await listarTelemetria(vehiculoSel, 40);
+          if (Array.isArray(ls) && ls.length) { lecturasSel = ls; break; }
+        } catch (_err) { /* reintento */ }
+        await pausa(300);
+      }
+    }
+    state.mapaRecorrido = lecturasSel;
+
+    // Si el usuario cambió de vista mientras hacíamos los fetch, abortar.
+    if (state.mapa !== mapa || !document.getElementById("map-tracking")) return;
+
+    const pts = Object.keys(state.mapaPosiciones)
+      .map((id) => state.mapaPosiciones[id])
+      .filter((x) => x && x.v && x.l && x.l.latitud != null && x.l.longitud != null);
+
+    capa.clearLayers();
+    const bounds = [];
+
+  // Recorrido reciente del vehículo seleccionado (ascendente por tiempo)
   const track = (Array.isArray(lecturasSel) ? lecturasSel : [])
     .filter((x) => x && x.latitud != null && x.longitud != null)
     .slice()
     .sort((a, b) => new Date(a.tiempo) - new Date(b.tiempo))
-    .map((x) => {
-      const p = [x.latitud, x.longitud];
-      bounds.push(p);
-      return p;
-    });
+    .map((x) => [Number(x.latitud), Number(x.longitud)]);
   if (track.length > 1) {
-    L.polyline(track, { color: "#4f46e5", weight: 3, opacity: 0.8, lineJoin: "round" }).addTo(map);
+    L.polyline(track, { color: "#4f46e5", weight: 3, opacity: 0.85, lineJoin: "round" }).addTo(capa);
   }
 
-  // Marcadores de la flota
+  // Marcadores de la flota (con pulso cuando el vehículo está en marcha)
   pts.forEach(({ v, l }) => {
     const esSel = v.id === vehiculoSel;
-    bounds.push([l.latitud, l.longitud]);
-    const m = L.circleMarker([l.latitud, l.longitud], {
-      radius: esSel ? 9 : 7,
-      color: "#ffffff",
-      weight: 2,
-      fillColor: esSel ? "#4f46e5" : "#16a34a",
-      fillOpacity: 1,
-    }).addTo(map);
+    const lat = Number(l.latitud);
+    const lng = Number(l.longitud);
+    const enMarcha = l.velocidad_kmh != null && Number(l.velocidad_kmh) > 1;
+    bounds.push([lat, lng]);
+
+    const icono = L.divIcon({
+      className: "veh-icon-wrap",
+      html: `<div class="veh-icon ${esSel ? "sel" : ""}">
+          <span class="veh-ring ${enMarcha ? "on" : ""}"></span>
+          <span class="veh-pin">${truckSvg()}</span>
+          <span class="veh-placa">${escapeHtml(v.placa)}</span>
+        </div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+    const m = L.marker([lat, lng], { icon: icono, title: v.placa }).addTo(capa);
     m.bindPopup(
       `<strong>${escapeHtml(v.placa)}</strong> · ${escapeHtml(v.tipo)}<br>` +
         `Velocidad: ${l.velocidad_kmh != null ? fmtNum2(l.velocidad_kmh) + " km/h" : "—"}<br>` +
@@ -1350,10 +1436,34 @@ async function renderMapaTracking(vehiculoSel, lecturasSel) {
     );
   });
 
-  if (bounds.length > 1) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 12 });
-  state.mapa = map;
-  // El contenedor se acomoda recién después del render (skeleton → vista)
-  setTimeout(() => map.invalidateSize(), 250);
+  // Aviso dentro del mapa cuando todavía no hay posiciones
+  const cont = document.getElementById("map-tracking");
+  const aviso = cont ? cont.querySelector(".map-empty-note") : null;
+  if (!pts.length) {
+    if (cont && !aviso) {
+      const note = document.createElement("div");
+      note.className = "map-empty-note";
+      note.textContent = "Ningún vehículo tiene posición GPS todavía. Las unidades aparecerán al recibir telemetría.";
+      cont.appendChild(note);
+    }
+  } else if (aviso) {
+    aviso.remove();
+  }
+
+  const upd = document.getElementById("mapa-updated");
+  if (upd) {
+    upd.textContent = pts.length
+      ? "Actualizado " + new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      : "Sin posiciones GPS";
+  }
+
+    if (state.mapaFit && bounds.length) {
+      mapa.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+      state.mapaFit = false;
+    }
+  } finally {
+    state.mapaActualizando = false;
+  }
 }
 
 function modalNuevaLectura() {
@@ -2050,6 +2160,31 @@ async function onAction(action, el) {
     case "reload-view":
       navigate(state.view).catch(console.error);
       break;
+
+    case "mapa-toggle": {
+      state.mapaPausado = !state.mapaPausado;
+      if (state.mapaTimer) { clearInterval(state.mapaTimer); state.mapaTimer = null; }
+      if (!state.mapaPausado) {
+        actualizarMapaTracking().catch((err) => console.warn("Mapa en vivo:", err));
+        state.mapaTimer = setInterval(() => {
+          actualizarMapaTracking().catch((err) => console.warn("Mapa en vivo:", err));
+        }, MAPA_REFRESCO_MS);
+      }
+      $$('[data-action="mapa-toggle"]').forEach((b) => {
+        b.innerHTML = state.mapaPausado ? `${icon("play")} Reanudar` : `${icon("pause")} Pausar`;
+      });
+      refreshIcons();
+      const live = $("#mapa-live");
+      if (live) live.classList.toggle("paused", state.mapaPausado);
+      toast(state.mapaPausado ? "Mapa en vivo pausado" : "Mapa en vivo reanudado", "success");
+      break;
+    }
+
+    case "mapa-centrar":
+      state.mapaFit = true;
+      await actualizarMapaTracking();
+      break;
+
 
     case "go-envios":
       navigate("envios").catch(console.error);
