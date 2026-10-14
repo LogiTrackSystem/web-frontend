@@ -1790,7 +1790,7 @@ async function renderFacturacion() {
   const kpiHtml = kpis.map((k, i) => kpiCardHtml(k, i)).join("");
 
   const factRows = (facturas || []).map((f, i) => `
-    <tr class="stagger" style="--i:${i}">
+    <tr class="clickable stagger" style="--i:${i}" data-action="ver-factura" data-id="${escapeHtml(f.id)}">
       <td class="number">${shortId(f.id)}</td>
       <td class="number">${shortId(f.cliente_id)}</td>
       <td>${escapeHtml(f.periodo)}</td>
@@ -1879,6 +1879,28 @@ async function runCerrarPeriodo() {
     const facturas = await cerrarPeriodoFacturas();
     toast(`Período cerrado: ${(facturas || []).length} facturas generadas`, "success");
     renderFacturacion().catch(console.error);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function modalDetalleFactura(facturaId) {
+  try {
+    const f = await obtenerFactura(facturaId);
+    if (!f) throw new Error("Factura no encontrada");
+    openModal({
+      title: "Detalle de factura",
+      body: `
+        <dl class="kv-list">
+          ${kvHtml("ID", `<span class="mono">${escapeHtml(f.id)}</span>`)}
+          ${kvHtml("Cliente", `<span class="mono">${escapeHtml(f.cliente_id)}</span>`)}
+          ${kvHtml("Período", escapeHtml(f.periodo))}
+          ${kvHtml("Monto total", fmtMonto(f.monto_total))}
+          ${kvHtml("Estado", estadoBadge(FACTURA_ESTADOS, f.estado))}
+          ${kvHtml("Emitida", fmtFecha(f.creado_en))}
+        </dl>`,
+      footer: `<button type="button" class="btn btn-primary" data-action="close-modal">Cerrar</button>`,
+    });
   } catch (err) {
     toast(err.message, "error");
   }
@@ -2245,6 +2267,10 @@ async function onAction(action, el) {
     /* Facturación */
     case "cerrar-periodo":
       runCerrarPeriodo();
+      break;
+
+    case "ver-factura":
+      modalDetalleFactura(el.dataset.id);
       break;
 
     default:

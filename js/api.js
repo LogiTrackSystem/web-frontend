@@ -216,6 +216,9 @@ function listarFacturas(filtros = {}) {
   const qs = params.toString();
   return request(`/api/v1/facturas${qs ? "?" + qs : ""}`);
 }
+function obtenerFactura(id) {
+  return request(`/api/v1/facturas/${id}`);
+}
 function cerrarPeriodoFacturas() {
   return request("/api/v1/facturas/cerrar-periodo", { method: "POST" });
 }
